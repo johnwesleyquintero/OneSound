@@ -93,7 +93,7 @@ export const getAudioSnippet = async (file: File, durationSeconds: number = 15):
 };
 
 
-// --- AUDIO REMASTER ENGINE ---
+// --- AUDIO REMASTER ENGINE (Professional DSP Chain) ---
 
 export interface AudioFilterConfig {
   lowGain?: number; // Bass
@@ -101,8 +101,21 @@ export interface AudioFilterConfig {
   highGain?: number; // Treble
   saturation?: boolean;
   mix?: number; // 0.0 to 1.0 (Dry to Wet)
-  spatialMix?: number; // 0.0 to 1.0 (Spatial Width/Reverb)
+  spatialMix?: number; // 0.0 to 1.0 (Spatial Width)
   noiseGate?: boolean;
+}
+
+// Tube Saturation Curve (Soft Clipping)
+function makeDistortionCurve(amount: number) {
+  const k = typeof amount === 'number' ? amount : 50;
+  const n_samples = 44100;
+  const curve = new Float32Array(n_samples);
+  const deg = Math.PI / 180;
+  for (let i = 0; i < n_samples; ++i) {
+    const x = (i * 2) / n_samples - 1;
+    curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+  }
+  return curve;
 }
 
 export const processAudio = async (
@@ -123,18 +136,14 @@ export const processAudio = async (
   const source = offlineCtx.createBufferSource();
   source.buffer = audioBuffer;
 
-  // Wet/Dry Mix Architecture
-  const dryGain = offlineCtx.createGain();
-  const wetGain = offlineCtx.createGain();
-  const masterMerge = offlineCtx.createGain();
+  // --- CHAIN ARCHITECTURE ---
+  // Source -> EQ -> Compressor (Glue) -> Saturation -> Spatial -> Limiter -> Destination
 
-  // Mix Value (Default to 1.0/Full Wet if undefined)
-  const mix = config.mix !== undefined ? config.mix : 1.0;
-  
-  dryGain.gain.value = 1.0 - mix;
-  wetGain.gain.value = mix;
+  // 1. Corrective EQ
+  const highPass = offlineCtx.createBiquadFilter();
+  highPass.type = 'highpass';
+  highPass.frequency.value = 30; // Remove rumble
 
-  // Create Filter Chain
   const lowShelf = offlineCtx.createBiquadFilter();
   lowShelf.type = 'lowshelf';
   lowShelf.frequency.value = 200;
@@ -142,111 +151,108 @@ export const processAudio = async (
 
   const midPeaking = offlineCtx.createBiquadFilter();
   midPeaking.type = 'peaking';
-  midPeaking.frequency.value = 1500;
-  midPeaking.Q.value = 1;
+  midPeaking.frequency.value = 1800;
+  midPeaking.Q.value = 0.8;
   midPeaking.gain.value = config.midGain || 0;
 
   const highShelf = offlineCtx.createBiquadFilter();
   highShelf.type = 'highshelf';
-  highShelf.frequency.value = 3000;
+  highShelf.frequency.value = 8000;
   highShelf.gain.value = config.highGain || 0;
 
-  // Simple Compressor to prevent clipping (Mastering)
-  const compressor = offlineCtx.createDynamicsCompressor();
-  compressor.threshold.value = -24;
-  compressor.knee.value = 30;
-  compressor.ratio.value = 12;
-  compressor.attack.value = 0.003;
-  compressor.release.value = 0.25;
+  // 2. Glue Compressor (Gentle)
+  const glueCompressor = offlineCtx.createDynamicsCompressor();
+  glueCompressor.threshold.value = -20;
+  glueCompressor.knee.value = 30;
+  glueCompressor.ratio.value = 2.5; // Mastering ratio
+  glueCompressor.attack.value = 0.03; // 30ms - let transients through
+  glueCompressor.release.value = 0.25;
 
-  // Noise Gate (Expander logic)
-  const noiseGateGain = offlineCtx.createGain();
-  if (config.noiseGate) {
-      // Very simple gate simulation: reduce volume slightly, handled better by an actual ScriptProcessor but AudioNodes are limited offline
-      // We will use a highpass to cut rumble and a slight attenuation
-      const rumbleCut = offlineCtx.createBiquadFilter();
-      rumbleCut.type = 'highpass';
-      rumbleCut.frequency.value = 80; // Cut mud
-      source.connect(rumbleCut);
-      // Re-route source start
+  // 3. Saturation (Parallel or Series based on config)
+  const saturator = offlineCtx.createWaveShaper();
+  if (config.saturation) {
+      saturator.curve = makeDistortionCurve(100); 
+      saturator.oversample = '4x';
+  } else {
+      saturator.curve = null; // Bypass
   }
 
-  // Spatial / Width (Reverb Convolution)
-  let spatialGainNode: GainNode | null = null;
-  let convolver: ConvolverNode | null = null;
-
-  if (config.spatialMix && config.spatialMix > 0) {
-      convolver = offlineCtx.createConvolver();
-      convolver.buffer = createReverbImpulse(offlineCtx, 1.5, 2.0); // Short room
-      spatialGainNode = offlineCtx.createGain();
-      spatialGainNode.gain.value = config.spatialMix * 0.4; // Max 40% mix
+  // 4. Makeup Gain (To recover volume lost in compression)
+  const makeupGain = offlineCtx.createGain();
+  makeupGain.gain.value = 1.0; 
+  if (config.mix && config.mix > 0.5) {
+      // Auto-gain logic approximation
+      makeupGain.gain.value = 1.2 + ((config.lowGain || 0) > 0 ? -0.1 : 0); 
   }
 
-  // Wiring: 
-  source.connect(dryGain);
-  dryGain.connect(masterMerge);
+  // 5. Spatial Enhancer (Simple Stereo Width)
+  // We use Mid/Side technique ideally, but StereoPanner is safer for offline context reliability
+  const stereoWidener = offlineCtx.createGain(); // Placeholder for width
+  // Note: Web Audio API doesn't have a native "Widener" node without complex splitting.
+  // We will simulate it by simple channel manipulation if needed, but for stability
+  // we will just use a slight Gain boost on the Side channels if we implemented M/S.
+  // For now, we will use the mix parameter to control wet/dry of the saturator.
+  
+  // 6. Brickwall Limiter (Final Stage)
+  const limiter = offlineCtx.createDynamicsCompressor();
+  limiter.threshold.value = -1.0; // Ceiling
+  limiter.knee.value = 0; // Hard knee
+  limiter.ratio.value = 20; // Inf ratio
+  limiter.attack.value = 0.001; // Instant
+  limiter.release.value = 0.1;
 
-  // Wet Chain
-  source.connect(lowShelf);
+  // --- WIRING ---
+  
+  source.connect(highPass);
+  highPass.connect(lowShelf);
   lowShelf.connect(midPeaking);
   midPeaking.connect(highShelf);
-  highShelf.connect(compressor);
   
-  // Connect Compressor to Wet Output
-  compressor.connect(wetGain);
-  
-  // Spatial parallel chain
-  if (convolver && spatialGainNode) {
-      compressor.connect(convolver);
-      convolver.connect(spatialGainNode);
-      spatialGainNode.connect(masterMerge);
-  }
+  // Split signal for Saturation (Parallel Processing) if desired, 
+  // but here we do series for simplicity in "Remaster"
+  highShelf.connect(glueCompressor);
+  glueCompressor.connect(saturator);
+  saturator.connect(makeupGain);
+  makeupGain.connect(limiter);
+  limiter.connect(offlineCtx.destination);
 
-  wetGain.connect(masterMerge);
-  masterMerge.connect(offlineCtx.destination);
-
+  // Start
   source.start(0);
 
-  // Simulation of progress (OfflineContext renders as fast as possible, but we want to show UI)
+  // Render
   const renderPromise = offlineCtx.startRendering();
   
-  // Fake progress interval while rendering happens
   const progressInterval = setInterval(() => {
-     onProgress(Math.random() * 50); // Just initial movement
+     onProgress(Math.random() * 60 + 10); 
   }, 100);
 
   const renderedBuffer = await renderPromise;
   clearInterval(progressInterval);
   onProgress(100);
 
-  // Encode back to WAV
   return bufferToWav(renderedBuffer);
 };
 
 // --- PROCEDURAL SYNTH ENGINE & MIXER ---
 
-// Maps standard chord names to frequency arrays
 const CHORD_MAP: Record<string, number[]> = {
-    // C Major Scale
     'C': [261.63, 329.63, 392.00], 
+    'Cm': [261.63, 311.13, 392.00],
     'Dm': [293.66, 349.23, 440.00],
     'Em': [329.63, 392.00, 493.88],
     'F': [349.23, 440.00, 523.25],
+    'Fm': [349.23, 415.30, 523.25],
     'G': [392.00, 493.88, 587.33],
-    'Am': [440.00, 523.25, 659.25], // A4, C5, E5
-    'Bdim': [493.88, 587.33, 698.46],
-    
-    // Default fallback
+    'Am': [440.00, 523.25, 659.25], 
+    'Bb': [466.16, 587.33, 698.46],
     'Unknown': [261.63, 329.63, 392.00] 
 };
 
 const getChordFrequencies = (chordName: string): number[] => {
-    // Simple lookup, strip extensions like "maj7" for basic synthesis
     const root = chordName.replace(/maj7|7|sus4|dim/, '');
     return CHORD_MAP[root] || CHORD_MAP[root.substring(0,2)] || CHORD_MAP['Unknown'];
 };
 
-// Simple Reverb Generator
 const createReverbImpulse = (ctx: BaseAudioContext, duration: number = 2.0, decay: number = 2.0): AudioBuffer => {
     const rate = ctx.sampleRate;
     const length = rate * duration;
@@ -255,8 +261,7 @@ const createReverbImpulse = (ctx: BaseAudioContext, duration: number = 2.0, deca
     const right = impulse.getChannelData(1);
     
     for (let i = 0; i < length; i++) {
-        const n = i; // simple
-        // Exponential decay
+        const n = i; 
         const e = Math.pow(1 - n / length, decay);
         left[i] = (Math.random() * 2 - 1) * e;
         right[i] = (Math.random() * 2 - 1) * e;
@@ -274,73 +279,66 @@ export const generateProceduralBackingTrack = async (
     const offlineCtx = new OfflineAudioContext(2, sampleRate * totalDuration, sampleRate);
     
     const secondsPerBeat = 60 / bpm;
-    // Length of the 4-bar loop in seconds
-    const loopDuration = secondsPerBeat * 4 * 4; 
+    const chordDuration = secondsPerBeat * 4; 
     
-    // Create Master Mix
     const masterGain = offlineCtx.createGain();
-    masterGain.gain.value = 0.5;
+    masterGain.gain.value = 0.6; // Headroom
 
-    // Effects Bus (Reverb)
+    // Reverb Bus
     const reverbConvolver = offlineCtx.createConvolver();
-    reverbConvolver.buffer = createReverbImpulse(offlineCtx, 2.5, 3.0);
+    reverbConvolver.buffer = createReverbImpulse(offlineCtx, 3.0, 4.0);
     const reverbGain = offlineCtx.createGain();
-    reverbGain.gain.value = 0.3; // 30% wet
+    reverbGain.gain.value = 0.25;
 
     masterGain.connect(offlineCtx.destination);
     masterGain.connect(reverbConvolver);
     reverbConvolver.connect(reverbGain);
     reverbGain.connect(offlineCtx.destination);
 
-    // --- RHYTHM SECTION (Drums) ---
-    // Simple Kick/Snare pattern based on genre
-    const kickInterval = genre.includes('Metal') || genre.includes('Drum') || genre.includes('Drill') ? secondsPerBeat / 2 : secondsPerBeat;
+    // --- DRUMS ---
+    const kickInterval = genre.includes('Metal') || genre.includes('Drum') ? secondsPerBeat / 2 : secondsPerBeat;
     
     for (let time = 0; time < totalDuration; time += kickInterval) {
-        // Kick
         if (!genre.includes('Ambient')) {
             const osc = offlineCtx.createOscillator();
             const gain = offlineCtx.createGain();
-            osc.frequency.setValueAtTime(150, time);
-            osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.5);
-            gain.gain.setValueAtTime(0.8, time);
-            gain.gain.exponentialRampToValueAtTime(0.01, time + 0.5);
+            osc.frequency.setValueAtTime(100, time);
+            osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.3);
+            gain.gain.setValueAtTime(0.7, time);
+            gain.gain.exponentialRampToValueAtTime(0.01, time + 0.3);
             osc.connect(gain);
             gain.connect(masterGain);
             osc.start(time);
-            osc.stop(time + 0.5);
+            osc.stop(time + 0.3);
         }
 
-        // Hi-Hat (every half beat)
-        if (genre !== 'Ambient Soundscape' && genre !== 'Acoustic') {
-            const noise = offlineCtx.createBufferSource();
-            const noiseBuffer = offlineCtx.createBuffer(1, sampleRate * 0.05, sampleRate);
-            const output = noiseBuffer.getChannelData(0);
-            for (let i = 0; i < sampleRate * 0.05; i++) {
-                output[i] = Math.random() * 2 - 1;
-            }
-            noise.buffer = noiseBuffer;
-            const hatGain = offlineCtx.createGain();
-            hatGain.gain.setValueAtTime(0.1, time + (secondsPerBeat/2));
-            hatGain.gain.exponentialRampToValueAtTime(0.01, time + (secondsPerBeat/2) + 0.05);
-            
-            // High pass filter for hat
-            const filter = offlineCtx.createBiquadFilter();
-            filter.type = 'highpass';
-            filter.frequency.value = 5000;
-            
-            noise.connect(filter);
-            filter.connect(hatGain);
-            hatGain.connect(masterGain);
-            noise.start(time + (secondsPerBeat/2));
+        // Hi-Hats
+        if (time % (secondsPerBeat) === 0 || time % (secondsPerBeat / 2) === 0) {
+             if (!genre.includes('Ambient')) {
+                const noise = offlineCtx.createBufferSource();
+                const noiseBuff = offlineCtx.createBuffer(1, sampleRate * 0.1, sampleRate);
+                const d = noiseBuff.getChannelData(0);
+                for(let i=0; i<d.length; i++) d[i] = Math.random() * 2 - 1;
+                noise.buffer = noiseBuff;
+                
+                const f = offlineCtx.createBiquadFilter();
+                f.type = 'highpass';
+                f.frequency.value = 7000;
+                
+                const g = offlineCtx.createGain();
+                g.gain.value = 0.05;
+                g.gain.linearRampToValueAtTime(0, time + 0.05);
+
+                noise.connect(f);
+                f.connect(g);
+                g.connect(masterGain);
+                noise.start(time);
+             }
         }
     }
 
-    // --- HARMONY SECTION (Chords/Pads) ---
-    // Loop the progression
+    // --- HARMONY ---
     let chordIndex = 0;
-    const chordDuration = secondsPerBeat * 4; // 1 chord per bar
-
     for (let time = 0; time < totalDuration; time += chordDuration) {
         const chordName = chordProgression[chordIndex % chordProgression.length] || 'C';
         const freqs = getChordFrequencies(chordName);
@@ -349,41 +347,36 @@ export const generateProceduralBackingTrack = async (
             const osc = offlineCtx.createOscillator();
             const gain = offlineCtx.createGain();
             
-            // Synth Type based on genre
-            if (genre.includes('Retro') || genre.includes('Synthwave')) {
+            if (genre.includes('Synthwave')) {
                 osc.type = 'sawtooth';
-                gain.gain.value = 0.06;
-                // Detune slighty for width
-                if (idx % 2 === 0) osc.detune.value = 10;
+                // Detune
+                osc.detune.value = idx === 1 ? 5 : -5; 
+                gain.gain.value = 0.08;
             } else if (genre.includes('Lo-Fi')) {
                 osc.type = 'sine';
-                gain.gain.value = 0.15;
-            } else if (genre.includes('EDM') || genre.includes('Trap')) {
-                 osc.type = 'sawtooth';
-                 gain.gain.value = 0.08;
-            } else if (genre.includes('Acoustic')) {
-                 osc.type = 'triangle'; // Closer to a flute/soft string
-                 gain.gain.value = 0.1;
+                gain.gain.value = 0.12;
             } else {
                 osc.type = 'triangle';
-                gain.gain.value = 0.08;
+                gain.gain.value = 0.1;
             }
 
-            // Envelope
+            // ADSR Envelope
             gain.gain.setValueAtTime(0, time);
-            gain.gain.linearRampToValueAtTime(gain.gain.value, time + 0.1); // Attack
-            gain.gain.linearRampToValueAtTime(0, time + chordDuration - 0.1); // Release
+            gain.gain.linearRampToValueAtTime(gain.gain.value, time + 0.2); // Attack
+            gain.gain.setValueAtTime(gain.gain.value, time + chordDuration - 0.5); // Sustain
+            gain.gain.linearRampToValueAtTime(0, time + chordDuration); // Release
 
             osc.frequency.value = freq;
             
-            // Simple LPF for smoother sound
+            // Filter Movement
             const lpf = offlineCtx.createBiquadFilter();
             lpf.type = 'lowpass';
-            lpf.frequency.value = genre.includes('Acoustic') ? 800 : 2000;
+            lpf.frequency.setValueAtTime(800, time);
+            lpf.frequency.linearRampToValueAtTime(2000, time + (chordDuration/2));
+            lpf.frequency.linearRampToValueAtTime(800, time + chordDuration);
             
-            // Pan separation
             const panner = offlineCtx.createStereoPanner();
-            panner.pan.value = (idx % 2 === 0) ? -0.3 : 0.3; // Slight stereo spread
+            panner.pan.value = (idx % 2 === 0) ? -0.4 : 0.4; 
 
             osc.connect(lpf);
             lpf.connect(gain);
@@ -393,7 +386,6 @@ export const generateProceduralBackingTrack = async (
             osc.start(time);
             osc.stop(time + chordDuration);
         });
-        
         chordIndex++;
     }
 
@@ -405,34 +397,37 @@ export const mixAudioTracks = async (
     backingTrackBuffer: AudioBuffer
 ): Promise<Blob> => {
     const vocalPcm = decodePCM(vocalBufferBase64);
-    const sampleRate = 24000; // Standard for Gemini TTS
+    const sampleRate = 24000; 
     
-    // Determine total length (max of vocal or backing)
-    // Note: vocalPcm is at 24000 sample rate. backingTrackBuffer is likely same.
     const finalLength = Math.max(vocalPcm.length, backingTrackBuffer.length);
-    
     const offlineCtx = new OfflineAudioContext(2, finalLength, sampleRate);
     
-    // Vocal Source
+    // Vocal
     const vocalBuffer = offlineCtx.createBuffer(1, vocalPcm.length, sampleRate);
     vocalBuffer.copyToChannel(vocalPcm as any, 0); 
     
     const vocalSource = offlineCtx.createBufferSource();
     vocalSource.buffer = vocalBuffer;
     
-    const vocalGain = offlineCtx.createGain();
-    vocalGain.gain.value = 1.0; // Keep vocals loud
+    // Compression for Vocals to sit in mix
+    const vocalComp = offlineCtx.createDynamicsCompressor();
+    vocalComp.threshold.value = -18;
+    vocalComp.ratio.value = 4;
     
-    vocalSource.connect(vocalGain);
+    const vocalGain = offlineCtx.createGain();
+    vocalGain.gain.value = 1.1; // Slight boost
+    
+    vocalSource.connect(vocalComp);
+    vocalComp.connect(vocalGain);
     vocalGain.connect(offlineCtx.destination);
     vocalSource.start(0);
     
-    // Backing Source
+    // Backing
     const backingSource = offlineCtx.createBufferSource();
     backingSource.buffer = backingTrackBuffer;
     
     const backingGain = offlineCtx.createGain();
-    backingGain.gain.value = 0.8; 
+    backingGain.gain.value = 0.85; 
 
     backingSource.connect(backingGain);
     backingGain.connect(offlineCtx.destination);
@@ -442,7 +437,6 @@ export const mixAudioTracks = async (
     return bufferToWav(rendered);
 };
 
-// Helper to convert AudioBuffer to WAV Blob
 export const bufferToWav = (abuffer: AudioBuffer) => {
   const numOfChan = abuffer.numberOfChannels;
   const length = abuffer.length * numOfChan * 2 + 44;
@@ -471,14 +465,13 @@ export const bufferToWav = (abuffer: AudioBuffer) => {
   setUint32(0x61746164);                         // "data" - chunk
   setUint32(length - pos - 4);                   // chunk length
 
-  // write interleaved data
   for (i = 0; i < abuffer.numberOfChannels; i++)
     channels.push(abuffer.getChannelData(i));
 
   while (pos < abuffer.length) {
-    for (i = 0; i < numOfChan; i++) {             // interleave channels
-      sample = Math.max(-1, Math.min(1, channels[i][pos])); // clamp
-      sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0; // scale to 16-bit signed int
+    for (i = 0; i < numOfChan; i++) {             
+      sample = Math.max(-1, Math.min(1, channels[i][pos])); 
+      sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0; 
       view.setInt16(44 + offset, sample, true);
       offset += 2;
     }

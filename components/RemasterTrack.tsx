@@ -52,12 +52,14 @@ export const RemasterTrack: React.FC = () => {
 
   // Initialize Audio Context for Visualizer when result is ready
   useEffect(() => {
-      if (resultUrl && audioRef.current && !audioContextRef.current) {
+      // Re-connect analyser whenever resultUrl or originalUrl changes if playing
+      if ((resultUrl || originalUrl) && audioRef.current && !audioContextRef.current) {
           try {
               const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
               const ctx = new AudioContextClass();
               const analyserNode = ctx.createAnalyser();
-              analyserNode.fftSize = 256;
+              analyserNode.fftSize = 512;
+              analyserNode.smoothingTimeConstant = 0.8;
               
               const source = ctx.createMediaElementSource(audioRef.current);
               source.connect(analyserNode);
@@ -69,7 +71,7 @@ export const RemasterTrack: React.FC = () => {
               console.error("Audio Context Init Error:", e);
           }
       }
-  }, [resultUrl]);
+  }, [resultUrl, originalUrl]);
 
   const handlePlayPause = () => {
       if (!audioRef.current) return;
@@ -182,7 +184,7 @@ export const RemasterTrack: React.FC = () => {
                 setTimeout(() => {
                     if (audioRef.current) {
                         audioRef.current.currentTime = 0;
-                        audioRef.current.play();
+                        audioRef.current.play().catch(() => {});
                         setIsPlaying(true);
                     }
                 }, 100);
@@ -227,12 +229,20 @@ export const RemasterTrack: React.FC = () => {
       const newMode = compareMode === 'remastered' ? 'original' : 'remastered';
       setCompareMode(newMode);
       
-      // Swap source
+      // Swap source but maintain time
       audioRef.current.src = newMode === 'remastered' ? resultUrl : originalUrl;
+      
+      // We need to set currentTime AFTER the new source loads metadata, but for blobs it's usually instant.
+      // However, safest is to set it immediately.
       audioRef.current.currentTime = currentTime;
       
       if (wasPlaying) {
-          audioRef.current.play().catch(e => console.error("Play error during swap", e));
+          const playPromise = audioRef.current.play();
+          if (playPromise !== undefined) {
+              playPromise.catch(error => {
+                  console.log("Playback interrupt during toggle:", error);
+              });
+          }
       }
   };
 
@@ -539,7 +549,7 @@ export const RemasterTrack: React.FC = () => {
                             >
                                 <Zap size={20} fill={eqSettings.saturation ? "currentColor" : "none"} />
                             </button>
-                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Drive</span>
+                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tube</span>
                         </div>
 
                          {/* Noise Gate Toggle */}
