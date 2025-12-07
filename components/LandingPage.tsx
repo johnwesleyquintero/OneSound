@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Music, Mic2, Disc } from 'lucide-react';
+import { Music, Mic2, Disc, Cpu, Activity, Zap } from 'lucide-react';
 import { UserProfile } from '../types';
 import { Logo } from './Logo';
 
@@ -78,94 +78,79 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="flex min-h-screen bg-black overflow-hidden font-sans">
+    <div className="flex min-h-screen bg-wes-950 font-sans text-white overflow-hidden relative">
       
-      {/* LEFT PANEL - IMMERSIVE VISUALS */}
-      <div className="hidden lg:flex w-[60%] relative flex-col justify-between p-16 overflow-hidden">
-        {/* Animated Background */}
-        <div className="absolute inset-0 bg-wes-900 z-0">
-           <div className="absolute top-0 left-[-10%] w-[500px] h-[500px] bg-wes-purple/20 rounded-full mix-blend-screen filter blur-[100px] animate-blob"></div>
-           <div className="absolute top-[20%] right-[-10%] w-[400px] h-[400px] bg-blue-600/20 rounded-full mix-blend-screen filter blur-[80px] animate-blob animation-delay-2000"></div>
-           <div className="absolute bottom-[-10%] left-[20%] w-[600px] h-[600px] bg-indigo-900/20 rounded-full mix-blend-screen filter blur-[120px] animate-blob animation-delay-4000"></div>
-           {/* Grid Pattern Overlay */}
-           <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div>
-        </div>
+      {/* Background Ambience */}
+      <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-wes-purple/20 blur-[120px] rounded-full pointer-events-none"></div>
+      <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-blue-900/20 blur-[120px] rounded-full pointer-events-none"></div>
 
-        {/* Content */}
-        <div className="relative z-10">
-          <div className="w-16 h-16 shadow-2xl shadow-purple-900/50 mb-8 rounded-2xl overflow-hidden">
-             <Logo className="w-full h-full" />
-          </div>
-          <h1 className="text-7xl font-bold text-white tracking-tight leading-tight mb-6">
-            Redefine<br/>
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-wes-purple to-blue-400">Your Sound.</span>
-          </h1>
-          <p className="text-xl text-gray-400 max-w-lg leading-relaxed">
-            The world's most advanced AI music studio. Remaster classics, generate originals, and visualize your audio in real-time.
-          </p>
-        </div>
-
-        {/* Feature Pills */}
-        <div className="relative z-10 flex space-x-4">
-            <div className="flex items-center space-x-2 bg-white/5 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
-                <Music className="w-4 h-4 text-wes-purple" />
-                <span className="text-sm text-gray-300">AI Composition</span>
-            </div>
-            <div className="flex items-center space-x-2 bg-white/5 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
-                <Mic2 className="w-4 h-4 text-blue-400" />
-                <span className="text-sm text-gray-300">Vocal Synthesis</span>
-            </div>
-            <div className="flex items-center space-x-2 bg-white/5 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
-                <Disc className="w-4 h-4 text-green-400" />
-                <span className="text-sm text-gray-300">Remastering</span>
-            </div>
-        </div>
-      </div>
-
-      {/* RIGHT PANEL - LOGIN */}
-      <div className="w-full lg:w-[40%] bg-wes-900 border-l border-wes-800 flex flex-col justify-center items-center p-8 relative">
-        <div className="w-full max-w-md space-y-8 relative z-10">
-          
-          <div className="text-center space-y-2">
-            <h2 className="text-3xl font-bold text-white">Welcome Back</h2>
-            <p className="text-gray-400">Sign in to access your studio.</p>
+      <div className="container mx-auto px-6 h-screen flex flex-col md:flex-row items-center justify-center relative z-10">
+        
+        {/* Left: Hero Content */}
+        <div className="flex-1 space-y-8 pr-0 md:pr-12 text-center md:text-left mb-12 md:mb-0">
+          <div className="inline-flex items-center space-x-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 backdrop-blur-sm">
+             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+             <span className="text-xs font-medium text-gray-300 tracking-wide uppercase">v2.0 Beta Live</span>
           </div>
 
-          {/* Login Card */}
-          <div className="glass-panel p-8 rounded-2xl shadow-2xl border border-wes-700/50 backdrop-blur-xl">
-            <div className="space-y-6">
+          <div className="space-y-4">
+             <div className="flex items-center justify-center md:justify-start space-x-4 mb-2">
+                 <Logo className="w-12 h-12 md:w-16 md:h-16" />
+                 <h1 className="text-5xl md:text-7xl font-bold tracking-tighter">OneSound</h1>
+             </div>
+             <p className="text-xl md:text-2xl text-gray-400 font-light leading-relaxed max-w-2xl">
+               The AI-Powered Audio Workstation. <br/>
+               <span className="text-white font-medium">Create, Remaster, and Visualize</span> your music in one place.
+             </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg mx-auto md:mx-0">
+             <div className="p-4 rounded-xl bg-white/5 border border-white/5 backdrop-blur-sm hover:bg-white/10 transition group">
+                <Mic2 className="w-6 h-6 text-wes-purple mb-2 group-hover:scale-110 transition-transform" />
+                <h3 className="font-bold">AI Vocal Synthesis</h3>
+                <p className="text-sm text-gray-500">Turn lyrics into studio-grade vocals.</p>
+             </div>
+             <div className="p-4 rounded-xl bg-white/5 border border-white/5 backdrop-blur-sm hover:bg-white/10 transition group">
+                <Activity className="w-6 h-6 text-blue-400 mb-2 group-hover:scale-110 transition-transform" />
+                <h3 className="font-bold">Neural Remastering</h3>
+                <p className="text-sm text-gray-500">Instant professional mastering for any track.</p>
+             </div>
+          </div>
+        </div>
+
+        {/* Right: Login Card */}
+        <div className="w-full max-w-md">
+            <div className="bg-wes-900/80 backdrop-blur-xl border border-white/10 p-8 rounded-3xl shadow-2xl relative overflow-hidden group">
+                <div className="absolute inset-0 bg-gradient-to-br from-wes-purple/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition duration-500"></div>
                 
-                {loading ? (
-                    <div className="flex flex-col items-center justify-center py-8 space-y-4">
-                        <div className="w-8 h-8 border-4 border-wes-purple border-t-transparent rounded-full animate-spin"></div>
-                        <p className="text-sm text-gray-400">Authenticating...</p>
+                <div className="relative z-10 text-center space-y-8">
+                    <div>
+                        <h2 className="text-2xl font-bold mb-2 text-white">Welcome Back</h2>
+                        <p className="text-gray-400 text-sm">Sign in to access your studio</p>
                     </div>
-                ) : (
-                    <>
-                        <div id="googleButtonDiv" className="h-12 w-full flex justify-center"></div>
-                        
-                        <div className="relative">
-                            <div className="absolute inset-0 flex items-center">
-                                <span className="w-full border-t border-wes-700" />
-                            </div>
-                            <div className="relative flex justify-center text-xs uppercase">
-                                <span className="bg-[#1e1e1e] px-2 text-gray-500 rounded px-2">Secure Access</span>
-                            </div>
-                        </div>
 
-                        <div className="text-center">
-                            <p className="text-xs text-gray-500">
-                                By continuing, you agree to OneSound's <a href="#" className="text-wes-purple hover:underline">Terms of Service</a> and <a href="#" className="text-wes-purple hover:underline">Privacy Policy</a>.
-                            </p>
+                    <div className="min-h-[60px] flex items-center justify-center">
+                         {!loading ? (
+                             <div id="googleButtonDiv" className="w-full"></div>
+                         ) : (
+                             <div className="flex items-center space-x-3 text-wes-purple">
+                                 <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                                 <span className="font-medium">Authenticating...</span>
+                             </div>
+                         )}
+                    </div>
+
+                    <div className="pt-6 border-t border-white/5 flex items-center justify-between text-xs text-gray-500">
+                        <span>&copy; 2025 OneSound AI</span>
+                        <div className="flex space-x-3">
+                            <span className="cursor-pointer hover:text-white transition">Privacy</span>
+                            <span className="cursor-pointer hover:text-white transition">Terms</span>
                         </div>
-                    </>
-                )}
+                    </div>
+                </div>
             </div>
-          </div>
         </div>
 
-        {/* Mobile-only background hint */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black to-wes-900 lg:hidden -z-10"></div>
       </div>
     </div>
   );

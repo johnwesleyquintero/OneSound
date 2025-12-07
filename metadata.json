@@ -1,6 +1,6 @@
 {
   "name": "OneSound",
-  "description": "A collaborative AI Music Studio partner that helps you remaster audio and create original compositions with lyrics and art generation.",
+  "description": "AI Music Studio. Create, Remaster, and Visualize your music with the power of Gemini.",
   "requestFramePermissions": [
     "microphone"
   ]

@@ -43,7 +43,7 @@ export const MOCK_HISTORY: Song[] = [
   {
     id: '1',
     title: 'Neon Horizons',
-    artist: 'WesAI',
+    artist: 'OneSound AI',
     genre: 'Synthwave',
     mood: 'Energetic',
     lyrics: ["[Instrumental Intro]", "Driving through the night...", "Neon lights reflecting in your eyes."],

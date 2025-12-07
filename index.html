@@ -3,11 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OneSound - AI Music Studio</title>
-    <!-- New Epic Favicon: OneSound Logo -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMTAwIDEwMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgcng9IjI0IiBmaWxsPSJ1cmwoI2xvZ29fZ3JhZGllbnQpIi8+PHJlY3QgeD0iMjgiIHk9IjQyIiB3aWR0aD0iMTIiIGhlaWdodD0iMTYiIHJ4PSI2IiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjUiLz48cmVjdCB4PSI0NCIgeT0iMjQiIHdpZHRoPSIxMiIgaGVpZ2h0PSI1MiIgcng9IjYiIGZpbGw9IndoaXRlIi8+PHJlY3QgeD0iNjAiIHk9IjM0IiB3aWR0aD0iMTIiIGhlaWdodD0iMzIiIHJ4PSI2IiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjc1Ii8+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJsb2dvX2dyYWRpZW50IiB4MT0iMCIgeTE9IjAiIHgyPSIxMDAiIHkyPSIxMDAiIGdyYWRpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIj48c3RvcCBzdG9wLWNvbG9yPSIjOEI1Q0Y2Ii8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjM0I4MkY2Ii8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PC9zdmc+" />
+    <title>OneSound | AI Music Studio</title>
+    <!-- OneSound Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTkgMThWNWwxMi0ydjEzIi8+PHBhdGggZD0iTTYgMThhMyAzIDAgMSAwIDMtMyAzIDMgMCAwIDAtMyAzIi8+PHBhdGggZD0iTTE4IDE2YTMgMyAwIDEgMCAzLTMgMyAzIDAgMCAwLTMgMyIvPjwvc3ZnPg==" />
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script>
       tailwind.config = {
@@ -19,15 +19,19 @@
             },
             colors: {
               wes: {
+                950: '#050505', // Deepest black
                 900: '#0a0a0a',
                 800: '#171717',
                 700: '#262626',
-                accent: '#3b82f6', // Blue for trust/tech
-                purple: '#8b5cf6', // Creativity
+                600: '#404040',
+                accent: '#3b82f6', // Tech Blue
+                purple: '#7c3aed', // Deep Electric Purple
+                success: '#10b981', // Signal Green
               }
             },
             animation: {
-              'blob': 'blob 7s infinite',
+              'blob': 'blob 10s infinite',
+              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
             },
             keyframes: {
               blob: {
@@ -45,11 +49,12 @@
       body {
         background-color: #050505;
         color: #e5e5e5;
+        font-family: 'Inter', sans-serif;
       }
       /* Custom scrollbar */
       ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
+        width: 6px;
+        height: 6px;
       }
       ::-webkit-scrollbar-track {
         background: #0a0a0a;
@@ -62,9 +67,9 @@
         background: #404040;
       }
       .glass-panel {
-        background: rgba(23, 23, 23, 0.7);
-        backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.05);
+        background: rgba(23, 23, 23, 0.6);
+        backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
       }
     </style>
   <script type="importmap">
