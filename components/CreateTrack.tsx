@@ -4,12 +4,51 @@ import { GenerationParams, Song } from '../types';
 import { generateSongConcept, generateCoverArt, generateVocals } from '../services/geminiService';
 import { supabase } from '../services/supabaseClient';
 import { base64ToUint8Array, createWavBlob } from '../utils/audioHelpers';
-import { Wand2, Music, Loader2, Zap, Edit3, Save, PlayCircle, RefreshCcw } from 'lucide-react';
+import { Wand2, Music, Loader2, Zap, Edit3, Save, PlayCircle, RefreshCcw, Coffee, CassetteTape, Sword, Mountain, Sparkles } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
 interface CreateTrackProps {
   onTrackCreated: (track: Song) => void;
 }
+
+const TEMPLATES = [
+  { 
+    id: 'lofi', 
+    label: 'Lo-Fi Study', 
+    icon: Coffee, 
+    genre: 'Lo-Fi Hip Hop', 
+    mood: 'Chill', 
+    voice: 'Zephyr',
+    description: 'Dusty vinyl crackle, mellow jazz piano chords, soft boom bap beat, raining outside atmosphere.' 
+  },
+  { 
+    id: 'nostalgia', 
+    label: '80s Nostalgia', 
+    icon: CassetteTape, 
+    genre: 'Cyberpunk Synthwave', 
+    mood: 'Euphoric', 
+    voice: 'Kore',
+    description: 'Neon soaked streets, analog synthesizers, gated reverb drums, late night drive vibes, retro future.' 
+  },
+  { 
+    id: 'ost', 
+    label: 'Anime OST', 
+    icon: Sword, 
+    genre: 'Indie Pop', 
+    mood: 'Energetic', 
+    voice: 'Puck',
+    description: 'High energy opening theme for a shonen anime, driving guitar riffs, emotional build up, power of friendship.' 
+  },
+  { 
+    id: 'cinematic', 
+    label: 'Cinematic', 
+    icon: Mountain, 
+    genre: 'Orchestral Cinematic', 
+    mood: 'Focus', 
+    voice: 'Fenrir',
+    description: 'Hans Zimmer style crescendo, massive string section, thunderous percussion, epic choir, wide soundstage.' 
+  }
+];
 
 export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
   const { addToast } = useToast();
@@ -29,6 +68,17 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
     customLyrics: '',
     voiceName: 'Kore'
   });
+
+  const applyTemplate = (template: typeof TEMPLATES[0]) => {
+    setFormData({
+      ...formData,
+      genre: template.genre,
+      mood: template.mood,
+      description: template.description,
+      voiceName: template.voice
+    });
+    addToast(`Applied "${template.label}" template.`, 'info');
+  };
 
   const uploadAsset = async (blob: Blob, bucket: string, path: string) => {
     const { data, error } = await supabase.storage.from(bucket).upload(path, blob, {
@@ -212,6 +262,31 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
             {phase === 'input' ? (
                 // --- PHASE 1: INPUT FORM ---
                 <form onSubmit={handleGenerateConcept} className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-300">
+                    
+                    {/* Templates Section */}
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 block">Quick Start Templates</label>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {TEMPLATES.map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => applyTemplate(t)}
+                            className={`p-3 rounded-xl border transition-all duration-200 flex flex-col items-center text-center space-y-2 hover:scale-105 ${
+                              formData.description === t.description 
+                                ? 'bg-wes-purple/20 border-wes-purple text-white' 
+                                : 'bg-wes-800 border-wes-700 text-gray-400 hover:bg-wes-800/80 hover:text-white'
+                            }`}
+                          >
+                             <t.icon className="w-6 h-6" />
+                             <span className="text-xs font-bold">{t.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-wes-700 w-full my-6"></div>
+
                     <div className="grid grid-cols-2 gap-6">
                         <div>
                             <label className="block text-sm font-medium text-gray-400 mb-2">Genre</label>
@@ -237,13 +312,16 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
 
                     <div>
                     <label className="block text-sm font-medium text-gray-400 mb-2">Vibe Description</label>
-                    <textarea 
-                        className="w-full bg-wes-800 border border-wes-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-wes-purple focus:outline-none h-24 resize-none"
-                        placeholder="E.g., A driving beat for a late night drive through Tokyo..."
-                        value={formData.description}
-                        onChange={(e) => setFormData({...formData, description: e.target.value})}
-                        required
-                    />
+                    <div className="relative">
+                      <textarea 
+                          className="w-full bg-wes-800 border border-wes-700 text-white rounded-lg px-4 py-3 pr-10 focus:ring-2 focus:ring-wes-purple focus:outline-none h-24 resize-none"
+                          placeholder="E.g., A driving beat for a late night drive through Tokyo..."
+                          value={formData.description}
+                          onChange={(e) => setFormData({...formData, description: e.target.value})}
+                          required
+                      />
+                      <Sparkles className="absolute right-3 top-3 w-4 h-4 text-wes-purple opacity-50" />
+                    </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -258,10 +336,10 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                             <label htmlFor="hasVocals" className="text-gray-300">Include Vocals</label>
                         </div>
 
-                        <div className="flex flex-col justify-center">
+                        <div className="flex flex-col justify-center px-2">
                             <label className="text-xs text-gray-500 mb-1 uppercase font-bold tracking-wider">Voice Profile</label>
                             <select 
-                                className="bg-wes-800 border-none text-white text-sm focus:ring-0 cursor-pointer"
+                                className="bg-wes-800 border-none text-white text-sm focus:ring-0 cursor-pointer rounded-lg p-2 hover:bg-wes-700 transition"
                                 value={formData.voiceName}
                                 onChange={(e) => setFormData({...formData, voiceName: e.target.value})}
                                 disabled={!formData.hasVocals}
@@ -375,11 +453,15 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                   <ul className="space-y-3 text-sm text-gray-400">
                     <li className="flex items-start">
                     <span className="text-wes-purple mr-2">•</span>
-                    Try mixing contrasting genres like "Jazz" and "Metal".
+                    Use the Templates to get engineered prompts.
                     </li>
                     <li className="flex items-start">
                     <span className="text-wes-purple mr-2">•</span>
-                    Specific instruments help (e.g., "Heavy 808s").
+                    "OST Mode" creates highly emotional dynamic structures.
+                    </li>
+                     <li className="flex items-start">
+                    <span className="text-wes-purple mr-2">•</span>
+                    Try mixing contrasting genres like "Jazz" and "Metal".
                     </li>
                   </ul>
               )}

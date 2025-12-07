@@ -150,3 +150,76 @@ export const generateVocals = async (lyrics: string[], voiceName: string = 'Kore
         throw error;
     }
 }
+
+export interface AudioAnalysis {
+  genre: string;
+  bpm: number;
+  sonicCharacteristics: string;
+  suggestedPreset: string;
+  reasoning: string;
+}
+
+export const analyzeAudioTrack = async (audioBase64: string): Promise<AudioAnalysis> => {
+  const ai = getClient();
+
+  const prompt = `
+    You are an expert Audio Mastering Engineer. 
+    Analyze the provided audio snippet.
+    Identify the genre and estimate the BPM.
+    Analyze the sonic characteristics (e.g., muddy, bright, quiet, distorted).
+    
+    Based on the analysis, recommend the BEST mastering preset from this exact list:
+    - "Modern Clarity (AI Clean)"
+    - "Vintage Tape Saturation"
+    - "Warm Tube Amp"
+    - "Bass Boosted & Punchy"
+    - "Vocal Isolation"
+
+    Provide a short technical reasoning for your choice.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              mimeType: "audio/wav",
+              data: audioBase64
+            }
+          },
+          { text: prompt }
+        ]
+      },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            genre: { type: Type.STRING },
+            bpm: { type: Type.INTEGER },
+            sonicCharacteristics: { type: Type.STRING },
+            suggestedPreset: { type: Type.STRING },
+            reasoning: { type: Type.STRING }
+          }
+        }
+      }
+    });
+
+    const text = response.text;
+    if (!text) throw new Error("No analysis returned");
+    
+    return JSON.parse(text) as AudioAnalysis;
+  } catch (error) {
+    console.error("Gemini Audio Analysis Error:", error);
+    // Fallback default
+    return {
+      genre: "Unknown",
+      bpm: 120,
+      sonicCharacteristics: "Standard audio",
+      suggestedPreset: "Modern Clarity (AI Clean)",
+      reasoning: "Analysis failed, defaulting to clean preset."
+    };
+  }
+};

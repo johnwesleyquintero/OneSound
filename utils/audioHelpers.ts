@@ -60,6 +60,38 @@ const writeString = (view: DataView, offset: number, string: string) => {
   }
 };
 
+// Helper to get a short snippet (max 15s) for AI analysis
+export const getAudioSnippet = async (file: File, durationSeconds: number = 15): Promise<string> => {
+  const arrayBuffer = await file.arrayBuffer();
+  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+  // Create a new shorter buffer
+  const length = Math.min(audioBuffer.length, audioBuffer.sampleRate * durationSeconds);
+  const offlineCtx = new OfflineAudioContext(1, length, audioBuffer.sampleRate);
+  
+  const source = offlineCtx.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(offlineCtx.destination);
+  source.start();
+
+  const renderedBuffer = await offlineCtx.startRendering();
+  
+  // Convert to WAV Blob then to Base64
+  const wavBlob = bufferToWav(renderedBuffer);
+  
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = (reader.result as string).split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(wavBlob);
+  });
+};
+
+
 // --- AUDIO REMASTER ENGINE ---
 
 export interface AudioFilterConfig {
