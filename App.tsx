@@ -4,17 +4,21 @@ import { Player } from './components/Player';
 import { CreateTrack } from './components/CreateTrack';
 import { RemasterTrack } from './components/RemasterTrack';
 import { Settings } from './components/Settings';
-import { AppView, Song } from './types';
+import { LandingPage } from './components/LandingPage';
+import { AppView, Song, UserProfile } from './types';
 import { supabase } from './services/supabaseClient';
-import { Play, Clock, MoreHorizontal } from 'lucide-react';
+import { Play, MoreHorizontal } from 'lucide-react';
 
 export default function App() {
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [history, setHistory] = useState<Song[]>([]);
   const [currentTrack, setCurrentTrack] = useState<Song | null>(null);
 
   // Fetch tracks from Supabase
   useEffect(() => {
+    if (!user) return; // Only fetch if logged in
+
     const fetchTracks = async () => {
       const { data, error } = await supabase
         .from('tracks')
@@ -24,8 +28,7 @@ export default function App() {
       if (error) {
         console.error("Error fetching tracks:", error);
       } else if (data) {
-        // Map DB fields to Song type (snake_case to camelCase mapping handled by types if we used camelCase in DB, 
-        // but here we used snake_case in DB cols. We need to map manually or ensure type alignment)
+        // Map DB fields to Song type
         const mappedSongs: Song[] = data.map((t: any) => ({
           id: t.id,
           title: t.title,
@@ -48,7 +51,11 @@ export default function App() {
     };
 
     fetchTracks();
-  }, [currentView]); // Re-fetch when view changes to update list after creation
+  }, [currentView, user]);
+
+  const handleLogin = (loggedInUser: UserProfile) => {
+    setUser(loggedInUser);
+  };
 
   const handleTrackCreated = (track: Song) => {
     setHistory([track, ...history]);
@@ -60,6 +67,11 @@ export default function App() {
     setCurrentTrack(track);
   };
 
+  // If not logged in, show Landing Page
+  if (!user) {
+    return <LandingPage onLogin={handleLogin} />;
+  }
+
   const renderContent = () => {
     switch (currentView) {
       case AppView.CREATE:
@@ -67,7 +79,7 @@ export default function App() {
       case AppView.REMASTER:
         return <RemasterTrack />;
       case AppView.SETTINGS:
-        return <Settings />;
+        return <Settings user={user} />;
       case AppView.DASHBOARD:
       case AppView.LIBRARY:
       default:
@@ -75,7 +87,7 @@ export default function App() {
           <div className="p-8">
             <header className="mb-8">
               <h2 className="text-3xl font-bold text-white mb-2">
-                {currentView === AppView.DASHBOARD ? "Good Evening, Wesley" : "Library"}
+                {currentView === AppView.DASHBOARD ? `Good Evening, ${user.name.split(' ')[0]}` : "Library"}
               </h2>
               <p className="text-gray-400">
                 {currentView === AppView.DASHBOARD ? "Here's your latest productions." : "All your generated tracks."}

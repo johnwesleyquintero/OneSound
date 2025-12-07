@@ -1,7 +1,12 @@
 import React from 'react';
-import { User, Shield, CreditCard, Bell } from 'lucide-react';
+import { Shield } from 'lucide-react';
+import { UserProfile } from '../types';
 
-export const Settings: React.FC = () => {
+interface SettingsProps {
+  user?: UserProfile;
+}
+
+export const Settings: React.FC<SettingsProps> = ({ user }) => {
   return (
     <div className="max-w-4xl mx-auto p-8">
       <h2 className="text-3xl font-bold text-white mb-2">Settings</h2>
@@ -11,22 +16,26 @@ export const Settings: React.FC = () => {
         {/* Profile Section */}
         <div className="glass-panel p-6 rounded-2xl">
           <div className="flex items-center space-x-4 mb-6">
-            <div className="w-16 h-16 bg-wes-purple rounded-full flex items-center justify-center text-2xl font-bold text-white">
-              W
+            <div className="w-16 h-16 rounded-full overflow-hidden bg-wes-purple flex items-center justify-center text-2xl font-bold text-white">
+              {user?.picture ? (
+                <img src={user.picture} alt={user.name} className="w-full h-full object-cover" />
+              ) : (
+                user?.name.charAt(0) || "W"
+              )}
             </div>
             <div>
-              <h3 className="text-xl font-bold text-white">John Wesley Quintero</h3>
+              <h3 className="text-xl font-bold text-white">{user?.name || "Guest User"}</h3>
               <p className="text-gray-400">Pro Plan Member</p>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
              <div className="p-4 bg-wes-800 rounded-xl border border-wes-700">
                 <p className="text-xs text-gray-500 uppercase">Email</p>
-                <p className="text-white">wesley@onesound.ai</p>
+                <p className="text-white">{user?.email || "Not connected"}</p>
              </div>
              <div className="p-4 bg-wes-800 rounded-xl border border-wes-700">
-                <p className="text-xs text-gray-500 uppercase">Role</p>
-                <p className="text-white">Administrator</p>
+                <p className="text-xs text-gray-500 uppercase">Google ID</p>
+                <p className="text-white font-mono text-sm truncate">{user?.sub || "---"}</p>
              </div>
           </div>
         </div>

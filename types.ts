@@ -16,6 +16,13 @@ export interface Song {
   type: 'original' | 'remaster';
 }
 
+export interface UserProfile {
+  name: string;
+  email: string;
+  picture: string;
+  sub: string; // Google ID
+}
+
 export interface UserState {
   credits: number;
   history: Song[];
@@ -23,6 +30,7 @@ export interface UserState {
   settings: {
     defaultVoice: string;
   };
+  profile: UserProfile | null;
 }
 
 export enum AppView {
