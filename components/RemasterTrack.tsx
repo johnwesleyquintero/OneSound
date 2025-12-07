@@ -26,57 +26,163 @@ export const RemasterTrack: React.FC = () => {
   });
   
   const [progress, setProgress] = useState(0);
-  const [resultBlob, setResultBlob] = useState<Blob | null>(null);
-  const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
-  const [compareMode, setCompareMode] = useState<'remastered' | 'original'>('remastered');
   
-  // Audio Context & Visualizer State
+  // Audio Context & Graph Refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
+  const [bypass, setBypass] = useState(false);
+
+  // Web Audio Graph Nodes
   const audioContextRef = useRef<AudioContext | null>(null);
+  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const lowShelfRef = useRef<BiquadFilterNode | null>(null);
+  const midPeakRef = useRef<BiquadFilterNode | null>(null);
+  const highShelfRef = useRef<BiquadFilterNode | null>(null);
+  const compressorRef = useRef<DynamicsCompressorNode | null>(null);
+  const gainRef = useRef<GainNode | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
 
   const { addToast } = useToast();
 
-  // Cleanup URLs on unmount or file change
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
         if (originalUrl) URL.revokeObjectURL(originalUrl);
-        if (resultUrl) URL.revokeObjectURL(resultUrl);
         if (audioContextRef.current) {
             audioContextRef.current.close();
         }
     };
   }, []);
 
-  // Initialize Audio Context for Visualizer when result is ready
+  // Initialize Audio Graph
+  const initAudioGraph = () => {
+    if (!audioRef.current || audioContextRef.current) return;
+
+    try {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        const ctx = new AudioContextClass();
+        audioContextRef.current = ctx;
+
+        // Create Nodes
+        const source = ctx.createMediaElementSource(audioRef.current);
+        sourceNodeRef.current = source;
+
+        // EQ Nodes
+        const low = ctx.createBiquadFilter();
+        low.type = 'lowshelf';
+        low.frequency.value = 200;
+        lowShelfRef.current = low;
+
+        const mid = ctx.createBiquadFilter();
+        mid.type = 'peaking';
+        mid.frequency.value = 1800;
+        mid.Q.value = 0.8;
+        midPeakRef.current = mid;
+
+        const high = ctx.createBiquadFilter();
+        high.type = 'highshelf';
+        high.frequency.value = 8000;
+        highShelfRef.current = high;
+
+        // Dynamics
+        const comp = ctx.createDynamicsCompressor();
+        comp.threshold.value = -24;
+        comp.knee.value = 30;
+        comp.ratio.value = 12;
+        comp.attack.value = 0.003;
+        comp.release.value = 0.25;
+        compressorRef.current = comp;
+
+        // Output Gain
+        const gain = ctx.createGain();
+        gainRef.current = gain;
+
+        // Analyser
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 2048; // Higher res for remastering view
+        analyser.smoothingTimeConstant = 0.85;
+        analyserRef.current = analyser;
+
+        // Initial Routing (Wet Chain)
+        source.connect(low);
+        low.connect(mid);
+        mid.connect(high);
+        high.connect(comp);
+        comp.connect(gain);
+        gain.connect(analyser);
+        analyser.connect(ctx.destination);
+
+    } catch (e) {
+        console.error("Audio Graph Init Error:", e);
+    }
+  };
+
+  // Live Parameter Updates
   useEffect(() => {
-      // Re-connect analyser whenever resultUrl or originalUrl changes if playing
-      if ((resultUrl || originalUrl) && audioRef.current && !audioContextRef.current) {
-          try {
-              const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-              const ctx = new AudioContextClass();
-              const analyserNode = ctx.createAnalyser();
-              analyserNode.fftSize = 512;
-              analyserNode.smoothingTimeConstant = 0.8;
-              
-              const source = ctx.createMediaElementSource(audioRef.current);
-              source.connect(analyserNode);
-              analyserNode.connect(ctx.destination);
-              
-              audioContextRef.current = ctx;
-              setAnalyser(analyserNode);
-          } catch (e) {
-              console.error("Audio Context Init Error:", e);
+      if (!audioContextRef.current) return;
+
+      const now = audioContextRef.current.currentTime;
+      const rampTime = 0.1; // Smooth transitions
+
+      if (lowShelfRef.current) lowShelfRef.current.gain.linearRampToValueAtTime(eqSettings.lowGain || 0, now + rampTime);
+      if (midPeakRef.current) midPeakRef.current.gain.linearRampToValueAtTime(eqSettings.midGain || 0, now + rampTime);
+      if (highShelfRef.current) highShelfRef.current.gain.linearRampToValueAtTime(eqSettings.highGain || 0, now + rampTime);
+      
+      // Makeup gain logic
+      if (gainRef.current) {
+          let makeup = 1.0;
+          if ((eqSettings.lowGain || 0) > 4) makeup -= 0.2; // reduce output if bass is huge
+          if ((eqSettings.mix || 1) < 1) makeup = 1.0; // Reset if dry/wet (not fully implemented in live graph yet, simplified)
+          gainRef.current.gain.linearRampToValueAtTime(makeup, now + rampTime);
+      }
+
+      // Saturation/Tube emulation via Compressor tweaking (Live simplification)
+      if (compressorRef.current) {
+          if (eqSettings.saturation) {
+            compressorRef.current.ratio.linearRampToValueAtTime(20, now + rampTime); // Harder compression
+            compressorRef.current.threshold.linearRampToValueAtTime(-30, now + rampTime);
+          } else {
+            compressorRef.current.ratio.linearRampToValueAtTime(12, now + rampTime);
+            compressorRef.current.threshold.linearRampToValueAtTime(-24, now + rampTime);
           }
       }
-  }, [resultUrl, originalUrl]);
+
+  }, [eqSettings]);
+
+  // Handle Bypass Logic
+  useEffect(() => {
+      if (!audioContextRef.current || !sourceNodeRef.current || !analyserRef.current) return;
+
+      // Disconnect everything
+      sourceNodeRef.current.disconnect();
+      if (gainRef.current) gainRef.current.disconnect();
+
+      if (bypass) {
+          // Dry Path: Source -> Analyser -> Dest
+          sourceNodeRef.current.connect(analyserRef.current);
+          analyserRef.current.connect(audioContextRef.current.destination);
+      } else {
+          // Wet Path: Source -> EQ -> Comp -> Gain -> Analyser -> Dest
+          if (lowShelfRef.current) {
+              sourceNodeRef.current.connect(lowShelfRef.current);
+              // Ensure the rest of the chain is connected (it should stay connected to itself)
+              if (gainRef.current) gainRef.current.connect(analyserRef.current);
+              analyserRef.current.connect(audioContextRef.current.destination);
+          }
+      }
+  }, [bypass]);
+
 
   const handlePlayPause = () => {
       if (!audioRef.current) return;
       
-      // Resume context if suspended (browser policy)
+      // Ensure graph is built
+      if (!audioContextRef.current) {
+          initAudioGraph();
+      }
+      
+      // Resume context if suspended
       if (audioContextRef.current?.state === 'suspended') {
           audioContextRef.current.resume();
       }
@@ -99,15 +205,15 @@ export const RemasterTrack: React.FC = () => {
       }
       setFile(selectedFile);
       setOriginalUrl(URL.createObjectURL(selectedFile));
-      setResultBlob(null);
-      setResultUrl(null);
       setProgress(0);
       setAnalysis(null);
-      setCompareMode('remastered');
+      setBypass(false);
       setIsPlaying(false);
+      
+      // Reset settings
       setEqSettings({ lowGain: 0, midGain: 0, highGain: 0, mix: 1.0, saturation: false, spatialMix: 0, noiseGate: false });
       
-      // Auto-Analyze on upload
+      // Auto-Analyze
       await runAnalysis(selectedFile);
     }
   };
@@ -121,9 +227,8 @@ export const RemasterTrack: React.FC = () => {
         setAnalysis(result);
         addToast(`Detected ${result.genre}. Suggested: ${result.suggestedPreset}`, 'success');
         
-        // Auto-select the suggested style
         if (result.suggestedPreset) {
-            handleApplyPreset(result.suggestedPreset, false);
+            handleApplyPreset(result.suggestedPreset);
         }
 
     } catch (e) {
@@ -145,110 +250,53 @@ export const RemasterTrack: React.FC = () => {
     }
   };
 
-  const handleApplyPreset = (style: string, autoRender: boolean = true) => {
+  const handleApplyPreset = (style: string) => {
       setSelectedStyle(style);
       const config = getPresetConfig(style);
       setEqSettings(config);
-      
-      if (autoRender && file) {
-          triggerRender(config);
-      }
+      setBypass(false); // Enable wet mode to hear preset
   };
 
-  const triggerRender = async (config: AudioFilterConfig) => {
-      if (!file) return;
-      setProcessing(true);
-      setProgress(10);
-      
-      // Stop playback if playing
-      if (audioRef.current && !audioRef.current.paused) {
-          audioRef.current.pause();
-          setIsPlaying(false);
-      }
-
-      try {
-        setTimeout(async () => {
-            try {
-                const processedBlob = await processAudio(file, config, (p) => setProgress(p));
-                const url = URL.createObjectURL(processedBlob);
-                
-                // If we have an existing URL, revoke it to save memory
-                if (resultUrl) URL.revokeObjectURL(resultUrl);
-
-                setResultBlob(processedBlob);
-                setResultUrl(url);
-                setProcessing(false);
-                setCompareMode('remastered');
-                
-                // Auto-play snippet
-                setTimeout(() => {
-                    if (audioRef.current) {
-                        audioRef.current.currentTime = 0;
-                        audioRef.current.play().catch(() => {});
-                        setIsPlaying(true);
-                    }
-                }, 100);
-
-            } catch (err) {
-                console.error(err);
-                setProcessing(false);
-                addToast("Error processing audio.", 'error');
-            }
-        }, 100); // Slight delay for UI update
-      } catch (e) {
-          setProcessing(false);
-      }
-  };
-
-  // Debounce the slider changes to avoid rendering on every pixel drag
   const handleManualAdjustment = (key: keyof AudioFilterConfig, value: number | boolean) => {
       setEqSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  const commitManualChanges = () => {
-      triggerRender(eqSettings);
-  };
+  const handleDownloadRender = async () => {
+      if (!file) return;
+      setProcessing(true);
+      setProgress(0);
+      addToast("Rendering final master...", 'loading');
 
-  const handleDownload = () => {
-      if (resultUrl && file) {
+      try {
+          // Pause playback during render to save resources
+          if (audioRef.current && !audioRef.current.paused) {
+             handlePlayPause();
+          }
+
+          const processedBlob = await processAudio(file, eqSettings, (p) => setProgress(p));
+          const url = URL.createObjectURL(processedBlob);
+          
           const a = document.createElement('a');
-          a.href = resultUrl;
-          a.download = `remastered_${file.name.replace(/\.[^/.]+$/, "")}.wav`;
+          a.href = url;
+          a.download = `mastered_${file.name.replace(/\.[^/.]+$/, "")}.wav`;
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
-      }
-  };
+          
+          setTimeout(() => URL.revokeObjectURL(url), 10000); // Cleanup later
+          addToast("Download started!", 'success');
 
-  const toggleCompare = () => {
-      if (!audioRef.current || !originalUrl || !resultUrl) return;
-      
-      const currentTime = audioRef.current.currentTime;
-      const wasPlaying = !audioRef.current.paused;
-      
-      const newMode = compareMode === 'remastered' ? 'original' : 'remastered';
-      setCompareMode(newMode);
-      
-      // Swap source but maintain time
-      audioRef.current.src = newMode === 'remastered' ? resultUrl : originalUrl;
-      
-      // We need to set currentTime AFTER the new source loads metadata, but for blobs it's usually instant.
-      // However, safest is to set it immediately.
-      audioRef.current.currentTime = currentTime;
-      
-      if (wasPlaying) {
-          const playPromise = audioRef.current.play();
-          if (playPromise !== undefined) {
-              playPromise.catch(error => {
-                  console.log("Playback interrupt during toggle:", error);
-              });
-          }
+      } catch (err) {
+          console.error(err);
+          addToast("Error rendering audio.", 'error');
+      } finally {
+          setProcessing(false);
+          setProgress(0);
       }
   };
 
   const handleReset = () => {
       setFile(null);
-      setResultUrl(null);
       setOriginalUrl(null);
       setAnalysis(null);
       setIsPlaying(false);
@@ -265,14 +313,12 @@ export const RemasterTrack: React.FC = () => {
                   step={0.1}
                   value={value}
                   onChange={(e) => onChange(parseFloat(e.target.value))}
-                  onMouseUp={commitManualChanges}
-                  onTouchEnd={commitManualChanges}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                   title={label}
                   {...({ orient: "vertical" } as any)}
               />
               <div 
-                  className={`absolute bottom-0 left-0 w-full transition-all duration-200 ${value > 0 ? 'bg-wes-purple' : 'bg-gray-600'}`}
+                  className={`absolute bottom-0 left-0 w-full transition-all duration-100 ease-linear ${value > 0 ? 'bg-wes-purple' : 'bg-gray-600'}`}
                   style={{ height: `${((value - min) / (max - min)) * 100}%` }}
               ></div>
           </div>
@@ -288,7 +334,7 @@ export const RemasterTrack: React.FC = () => {
       <div className="flex items-center justify-between mb-8">
         <div>
             <h2 className="text-3xl font-bold text-white mb-1">Mastering Console</h2>
-            <p className="text-gray-400">Neural analysis with manual parametric control.</p>
+            <p className="text-gray-400">Real-time neural analysis and DSP monitoring.</p>
         </div>
         {file && (
              <button 
@@ -320,7 +366,7 @@ export const RemasterTrack: React.FC = () => {
             {file && (
                 <>
                 {/* Analysis Card */}
-                <div className="bg-gradient-to-br from-wes-800 to-indigo-950/50 rounded-xl border border-wes-700/50 p-5 relative overflow-hidden">
+                <div className="bg-gradient-to-br from-wes-800 to-indigo-950/50 rounded-xl border border-wes-700/50 p-5 relative overflow-hidden animate-in fade-in slide-in-from-left-4">
                      <div className="absolute top-0 right-0 p-4 opacity-10">
                         <Activity size={80} />
                      </div>
@@ -397,9 +443,9 @@ export const RemasterTrack: React.FC = () => {
                     <>
                     <div className="absolute inset-0 z-0">
                          <Visualizer 
-                            analyser={analyser} 
+                            analyser={analyserRef.current} 
                             isPlaying={isPlaying} 
-                            color={compareMode === 'original' ? '#6b7280' : '#8b5cf6'} 
+                            color={bypass ? '#6b7280' : '#8b5cf6'} 
                             barCount={128}
                         />
                     </div>
@@ -408,7 +454,7 @@ export const RemasterTrack: React.FC = () => {
                     {processing && (
                         <div className="absolute inset-0 z-20 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center">
                             <Loader2 className="w-12 h-12 text-wes-purple animate-spin mb-4" />
-                            <p className="text-white font-mono tracking-widest animate-pulse">RENDERING AUDIO ENGINE...</p>
+                            <p className="text-white font-mono tracking-widest animate-pulse">RENDERING MASTER FILE...</p>
                             <div className="w-64 h-1 bg-wes-900 rounded-full mt-4 overflow-hidden">
                                 <div className="h-full bg-wes-purple transition-all duration-300" style={{ width: `${progress}%` }}></div>
                             </div>
@@ -420,40 +466,43 @@ export const RemasterTrack: React.FC = () => {
                          <div className="flex items-center justify-between mb-4">
                             <div>
                                 <h3 className="text-white font-bold text-xl">{file.name}</h3>
-                                <p className="text-xs text-gray-400 uppercase tracking-widest font-mono">
-                                    {compareMode === 'original' ? 'SOURCE AUDIO' : 'MASTERED OUTPUT'}
+                                <p className="text-xs text-gray-400 uppercase tracking-widest font-mono flex items-center space-x-2">
+                                    <span className={`w-2 h-2 rounded-full ${bypass ? 'bg-gray-500' : 'bg-green-500 animate-pulse'}`}></span>
+                                    <span>{bypass ? 'BYPASS MODE (ORIGINAL)' : 'LIVE PROCESSING ACTIVE'}</span>
                                 </p>
                             </div>
                             <div className="flex items-center space-x-3">
                                  <button
-                                    onClick={toggleCompare}
-                                    disabled={!resultUrl}
+                                    onClick={() => setBypass(!bypass)}
                                     className={`flex items-center space-x-2 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all border ${
-                                        compareMode === 'original' 
-                                        ? 'bg-gray-800 text-gray-300 border-gray-600' 
-                                        : 'bg-wes-purple text-white border-wes-500 shadow-lg shadow-purple-900/50'
+                                        bypass 
+                                        ? 'bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700' 
+                                        : 'bg-wes-purple text-white border-wes-500 shadow-lg shadow-purple-900/50 hover:bg-wes-600'
                                     }`}
                                 >
                                     <Ear className="w-3 h-3" />
-                                    <span>{compareMode === 'original' ? 'Bypass' : 'Active'}</span>
+                                    <span>{bypass ? 'Enable FX' : 'Bypass FX'}</span>
                                 </button>
                             </div>
                          </div>
                          
                          <div className="flex items-center justify-center space-x-8">
-                            <button className="text-gray-500 hover:text-white transition"><Rewind size={24} /></button>
+                            <button 
+                                onClick={() => { if(audioRef.current) audioRef.current.currentTime = 0; }}
+                                className="text-gray-500 hover:text-white transition"
+                            >
+                                <Rewind size={24} />
+                            </button>
                             <button 
                                 onClick={handlePlayPause}
-                                disabled={!resultUrl}
-                                className="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition shadow-lg hover:shadow-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition shadow-lg hover:shadow-white/20"
                             >
                                 {isPlaying ? <Pause size={24} fill="black" /> : <Play size={24} fill="black" className="ml-1" />}
                             </button>
                             <button 
-                                onClick={handleDownload}
-                                disabled={!resultUrl}
+                                onClick={handleDownloadRender}
                                 className="w-10 h-10 rounded-full bg-wes-800 text-white flex items-center justify-center border border-wes-700 hover:bg-wes-700 transition"
-                                title="Download"
+                                title="Render & Download"
                             >
                                 <Download size={18} />
                             </button>
@@ -466,13 +515,12 @@ export const RemasterTrack: React.FC = () => {
                     </div>
                 )}
                 
-                {/* Hidden Audio */}
+                {/* Source Audio Element */}
                 <audio 
                     ref={audioRef} 
-                    src={resultUrl || ""} 
+                    src={originalUrl || ""} 
                     onEnded={() => setIsPlaying(false)}
-                    onPlay={() => setIsPlaying(true)}
-                    onPause={() => setIsPlaying(false)}
+                    crossOrigin="anonymous"
                     className="hidden"
                 />
             </div>
@@ -483,12 +531,15 @@ export const RemasterTrack: React.FC = () => {
                 {/* EQ Section */}
                 <div className="bg-wes-900/50 border border-wes-800 rounded-2xl p-6 relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500/50 to-transparent"></div>
-                    <div className="flex items-center space-x-2 mb-6">
-                        <SlidersHorizontal className="w-5 h-5 text-blue-500" />
-                        <h3 className="text-white font-bold uppercase tracking-wider text-sm">Parametric EQ</h3>
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center space-x-2">
+                            <SlidersHorizontal className="w-5 h-5 text-blue-500" />
+                            <h3 className="text-white font-bold uppercase tracking-wider text-sm">Parametric EQ</h3>
+                        </div>
+                        {bypass && <span className="text-[10px] text-red-500 font-bold border border-red-500/30 bg-red-500/10 px-2 py-0.5 rounded">BYPASSED</span>}
                     </div>
                     
-                    <div className={`grid grid-cols-3 gap-4 ${!file || processing ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
+                    <div className={`grid grid-cols-3 gap-4 ${!file || bypass ? 'opacity-50 pointer-events-none grayscale' : ''} transition-all duration-300`}>
                         <Knob 
                             label="Low" 
                             min={-12} 
@@ -516,12 +567,15 @@ export const RemasterTrack: React.FC = () => {
                 {/* Spatial & Dynamics Section */}
                 <div className="bg-wes-900/50 border border-wes-800 rounded-2xl p-6 relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-wes-purple/50 to-transparent"></div>
-                    <div className="flex items-center space-x-2 mb-6">
-                        <Waves className="w-5 h-5 text-wes-purple" />
-                        <h3 className="text-white font-bold uppercase tracking-wider text-sm">Spatial & Dynamics</h3>
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center space-x-2">
+                            <Waves className="w-5 h-5 text-wes-purple" />
+                            <h3 className="text-white font-bold uppercase tracking-wider text-sm">Spatial & Dynamics</h3>
+                        </div>
+                        {bypass && <span className="text-[10px] text-red-500 font-bold border border-red-500/30 bg-red-500/10 px-2 py-0.5 rounded">BYPASSED</span>}
                     </div>
                     
-                    <div className={`grid grid-cols-3 gap-4 ${!file || processing ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
+                    <div className={`grid grid-cols-3 gap-4 ${!file || bypass ? 'opacity-50 pointer-events-none grayscale' : ''} transition-all duration-300`}>
                         
                         {/* Spatial Width Knob */}
                         <Knob 
@@ -536,11 +590,7 @@ export const RemasterTrack: React.FC = () => {
                         {/* Saturation Toggle */}
                         <div className="flex flex-col items-center justify-end h-full pb-1">
                             <button 
-                                onClick={() => {
-                                    const newVal = !eqSettings.saturation;
-                                    handleManualAdjustment('saturation', newVal);
-                                    setTimeout(commitManualChanges, 100);
-                                }}
+                                onClick={() => handleManualAdjustment('saturation', !eqSettings.saturation)}
                                 className={`w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all mb-2 ${
                                     eqSettings.saturation 
                                     ? 'border-red-500 bg-red-500/20 text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' 
@@ -555,11 +605,7 @@ export const RemasterTrack: React.FC = () => {
                          {/* Noise Gate Toggle */}
                          <div className="flex flex-col items-center justify-end h-full pb-1">
                             <button 
-                                onClick={() => {
-                                    const newVal = !eqSettings.noiseGate;
-                                    handleManualAdjustment('noiseGate', newVal);
-                                    setTimeout(commitManualChanges, 100);
-                                }}
+                                onClick={() => handleManualAdjustment('noiseGate', !eqSettings.noiseGate)}
                                 className={`w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all mb-2 ${
                                     eqSettings.noiseGate 
                                     ? 'border-green-500 bg-green-500/20 text-green-500 shadow-[0_0_15px_rgba(34,197,94,0.4)]' 
