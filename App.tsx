@@ -1,27 +1,50 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Player } from './components/Player';
 import { CreateTrack } from './components/CreateTrack';
 import { RemasterTrack } from './components/RemasterTrack';
 import { Settings } from './components/Settings';
 import { LandingPage } from './components/LandingPage';
+import { Logo } from './components/Logo';
 import { AppView, Song, UserProfile } from './types';
 import { Play, MoreHorizontal } from 'lucide-react';
 import { useLibrary } from './hooks/useLibrary';
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [isSessionLoading, setIsSessionLoading] = useState(true); // New state to prevent flash
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [currentTrack, setCurrentTrack] = useState<Song | null>(null);
 
   // Use custom hook for library management
   const { history, addTrack } = useLibrary(user);
 
+  // Check for persisted session on mount
+  useEffect(() => {
+    const restoreSession = () => {
+      try {
+        const storedUser = localStorage.getItem('onesound_user');
+        if (storedUser) {
+          setUser(JSON.parse(storedUser));
+        }
+      } catch (e) {
+        console.error("Failed to restore session", e);
+        localStorage.removeItem('onesound_user');
+      } finally {
+        setIsSessionLoading(false);
+      }
+    };
+
+    restoreSession();
+  }, []);
+
   const handleLogin = (loggedInUser: UserProfile) => {
+    localStorage.setItem('onesound_user', JSON.stringify(loggedInUser));
     setUser(loggedInUser);
   };
 
   const handleLogout = () => {
+    localStorage.removeItem('onesound_user');
     setUser(null);
     setCurrentTrack(null);
     setCurrentView(AppView.DASHBOARD);
@@ -36,6 +59,20 @@ export default function App() {
   const playTrack = (track: Song) => {
     setCurrentTrack(track);
   };
+
+  // Show loading screen while checking session
+  if (isSessionLoading) {
+    return (
+      <div className="flex min-h-screen bg-black items-center justify-center">
+        <div className="flex flex-col items-center animate-pulse">
+           <div className="w-16 h-16 shadow-2xl shadow-purple-900/50 mb-4 rounded-2xl overflow-hidden">
+             <Logo className="w-full h-full" />
+          </div>
+          <p className="text-gray-500 text-xs font-mono tracking-widest">INITIALIZING STUDIO...</p>
+        </div>
+      </div>
+    );
+  }
 
   // If not logged in, show Landing Page
   if (!user) {
