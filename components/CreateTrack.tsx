@@ -4,7 +4,7 @@ import { GenerationParams, Song } from '../types';
 import { generateSongConcept, generateCoverArt, generateVocals } from '../services/geminiService';
 import { supabase } from '../services/supabaseClient';
 import { base64ToUint8Array, createWavBlob } from '../utils/audioHelpers';
-import { Wand2, Music, Loader2, Zap, Edit3, Save, PlayCircle, RefreshCcw, Coffee, CassetteTape, Sword, Mountain, Sparkles } from 'lucide-react';
+import { Wand2, Music, Loader2, Zap, Edit3, Save, PlayCircle, RefreshCcw, Coffee, CassetteTape, Sword, Mountain, Sparkles, Users } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
 interface CreateTrackProps {
@@ -66,7 +66,9 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
     description: '',
     hasVocals: true,
     customLyrics: '',
-    voiceName: 'Kore'
+    voiceName: 'Kore',
+    isDuet: false,
+    secondaryVoiceName: 'Puck'
   });
 
   const applyTemplate = (template: typeof TEMPLATES[0]) => {
@@ -75,7 +77,8 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
       genre: template.genre,
       mood: template.mood,
       description: template.description,
-      voiceName: template.voice
+      voiceName: template.voice,
+      isDuet: false // Reset duet on template apply to keep it simple
     });
     addToast(`Applied "${template.label}" template.`, 'info');
   };
@@ -95,7 +98,7 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
   const handleGenerateConcept = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    addToast("Brainstorming lyrics and composition...", "loading");
+    addToast(formData.isDuet ? "Arranging duet structure..." : "Brainstorming composition...", "loading");
 
     try {
       const concept = await generateSongConcept(formData);
@@ -123,7 +126,11 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
       let audioPromise = Promise.resolve("");
 
       if (formData.hasVocals && draftTrack.lyrics) {
-         audioPromise = generateVocals(draftTrack.lyrics, formData.voiceName);
+         audioPromise = generateVocals(
+            draftTrack.lyrics, 
+            formData.voiceName || 'Kore',
+            formData.isDuet ? formData.secondaryVoiceName : undefined
+         );
       }
 
       const [artBase64, audioBase64] = await Promise.all([artPromise, audioPromise]);
@@ -175,7 +182,9 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
         bpm: draftTrack.bpm,
         instruments: draftTrack.instruments,
         type: 'original',
-        description: draftTrack.description
+        description: draftTrack.description,
+        isDuet: formData.isDuet,
+        secondaryVoiceName: formData.secondaryVoiceName
       };
 
       // Try inserting into DB
@@ -226,6 +235,15 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
       const lines = e.target.value.split('\n');
       setDraftTrack({ ...draftTrack, lyrics: lines });
   };
+
+  const VoiceOptions = () => (
+    <>
+        <option value="Kore">Kore (Balanced)</option>
+        <option value="Fenrir">Fenrir (Deep)</option>
+        <option value="Puck">Puck (Energetic)</option>
+        <option value="Zephyr">Zephyr (Soft)</option>
+    </>
+  );
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -324,32 +342,63 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                     </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="flex items-center space-x-3 p-4 border border-wes-700 rounded-xl bg-wes-800/30">
-                            <input 
-                                type="checkbox" 
-                                id="hasVocals"
-                                className="w-5 h-5 rounded border-gray-600 text-wes-purple focus:ring-wes-purple bg-wes-800"
-                                checked={formData.hasVocals}
-                                onChange={(e) => setFormData({...formData, hasVocals: e.target.checked})}
-                            />
-                            <label htmlFor="hasVocals" className="text-gray-300">Include Vocals</label>
+                    <div className="bg-wes-800/40 p-4 rounded-xl border border-wes-700 space-y-4">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                                <input 
+                                    type="checkbox" 
+                                    id="hasVocals"
+                                    className="w-5 h-5 rounded border-gray-600 text-wes-purple focus:ring-wes-purple bg-wes-800"
+                                    checked={formData.hasVocals}
+                                    onChange={(e) => setFormData({...formData, hasVocals: e.target.checked})}
+                                />
+                                <label htmlFor="hasVocals" className="text-white font-medium">Include Vocals</label>
+                            </div>
+                            
+                            {formData.hasVocals && (
+                                <div className="flex items-center space-x-2">
+                                    <label htmlFor="isDuet" className={`text-sm font-bold cursor-pointer transition-colors ${formData.isDuet ? 'text-wes-purple' : 'text-gray-500'}`}>
+                                        Duet Mode
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormData(prev => ({ ...prev, isDuet: !prev.isDuet }))}
+                                        className={`w-12 h-6 rounded-full p-1 transition-colors ${formData.isDuet ? 'bg-wes-purple' : 'bg-wes-700'}`}
+                                    >
+                                        <div className={`w-4 h-4 rounded-full bg-white transform transition-transform ${formData.isDuet ? 'translate-x-6' : 'translate-x-0'}`} />
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
-                        <div className="flex flex-col justify-center px-2">
-                            <label className="text-xs text-gray-500 mb-1 uppercase font-bold tracking-wider">Voice Profile</label>
-                            <select 
-                                className="bg-wes-800 border-none text-white text-sm focus:ring-0 cursor-pointer rounded-lg p-2 hover:bg-wes-700 transition"
-                                value={formData.voiceName}
-                                onChange={(e) => setFormData({...formData, voiceName: e.target.value})}
-                                disabled={!formData.hasVocals}
-                            >
-                                <option value="Kore">Kore (Balanced)</option>
-                                <option value="Fenrir">Fenrir (Deep)</option>
-                                <option value="Puck">Puck (Energetic)</option>
-                                <option value="Zephyr">Zephyr (Soft)</option>
-                            </select>
-                        </div>
+                        {formData.hasVocals && (
+                            <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
+                                <div>
+                                    <label className="text-xs text-gray-500 mb-1 uppercase font-bold tracking-wider block">
+                                        {formData.isDuet ? 'Lead Voice' : 'Voice Profile'}
+                                    </label>
+                                    <select 
+                                        className="w-full bg-wes-800 border border-wes-700 text-white text-sm focus:ring-2 focus:ring-wes-purple cursor-pointer rounded-lg p-2.5 transition"
+                                        value={formData.voiceName}
+                                        onChange={(e) => setFormData({...formData, voiceName: e.target.value})}
+                                    >
+                                        <VoiceOptions />
+                                    </select>
+                                </div>
+                                {formData.isDuet && (
+                                    <div>
+                                        <label className="text-xs text-gray-500 mb-1 uppercase font-bold tracking-wider block">Feature Voice</label>
+                                        <select 
+                                            className="w-full bg-wes-800 border border-wes-700 text-white text-sm focus:ring-2 focus:ring-wes-purple cursor-pointer rounded-lg p-2.5 transition"
+                                            value={formData.secondaryVoiceName}
+                                            onChange={(e) => setFormData({...formData, secondaryVoiceName: e.target.value})}
+                                        >
+                                            <VoiceOptions />
+                                        </select>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     <button 
@@ -396,7 +445,10 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
 
                     <div className="flex-1 flex flex-col">
                         <div className="flex justify-between items-center mb-2">
-                             <label className="text-xs text-gray-500 uppercase font-bold">Lyrics Editor</label>
+                             <div className="flex items-center space-x-2">
+                                <label className="text-xs text-gray-500 uppercase font-bold">Lyrics Editor</label>
+                                {formData.isDuet && <span className="text-[10px] bg-wes-purple/20 text-wes-purple px-2 py-0.5 rounded border border-wes-purple/50">Duet Mode</span>}
+                             </div>
                              <button 
                                 type="button" 
                                 onClick={() => setPhase('input')}
@@ -412,7 +464,11 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                             placeholder="Lyrics will appear here..."
                             style={{ minHeight: '300px' }}
                         />
-                        <p className="text-xs text-gray-500 mt-2 text-right">Edit lines to adjust phrasing. Empty lines create pauses.</p>
+                        <p className="text-xs text-gray-500 mt-2 text-right">
+                            {formData.isDuet 
+                             ? "Tip: Use 'Speaker 1:' and 'Speaker 2:' to assign lines." 
+                             : "Edit lines to adjust phrasing. Empty lines create pauses."}
+                        </p>
                     </div>
 
                     <button 
@@ -446,7 +502,11 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                      </li>
                      <li className="flex items-start">
                         <span className="text-wes-purple mr-2 font-bold">3.</span>
-                        Use punctuation to control rhythm. Commas add short pauses.
+                        {formData.isDuet ? (
+                            <span>Duet Active: Keep the <strong>Speaker 1:</strong> and <strong>Speaker 2:</strong> prefixes intact.</span>
+                        ) : (
+                            <span>Use punctuation to control rhythm. Commas add short pauses.</span>
+                        )}
                      </li>
                   </ul>
               ) : (
@@ -457,7 +517,7 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                     </li>
                     <li className="flex items-start">
                     <span className="text-wes-purple mr-2">•</span>
-                    "OST Mode" creates highly emotional dynamic structures.
+                    Enable <strong>Duet Mode</strong> to create dynamic conversations between two AI voices.
                     </li>
                      <li className="flex items-start">
                     <span className="text-wes-purple mr-2">•</span>

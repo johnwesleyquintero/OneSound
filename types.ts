@@ -14,6 +14,8 @@ export interface Song {
   instruments?: string[];
   description?: string;
   type: 'original' | 'remaster';
+  isDuet?: boolean;
+  secondaryVoiceName?: string;
 }
 
 export interface UserProfile {
@@ -48,6 +50,8 @@ export interface GenerationParams {
   customLyrics?: string;
   hasVocals: boolean;
   voiceName?: string;
+  isDuet: boolean;
+  secondaryVoiceName?: string;
 }
 
 export interface RemasterParams {

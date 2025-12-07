@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Song } from '../types';
-import { Play, Pause, SkipBack, SkipForward, Volume2, Mic2, Maximize2, ChevronDown } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, Mic2, Maximize2, ChevronDown, Users } from 'lucide-react';
 import { Visualizer } from './Visualizer';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 
@@ -46,11 +46,17 @@ export const Player: React.FC<PlayerProps> = ({ currentTrack }) => {
                 
                 {/* Left: Art & Controls */}
                 <div className="flex-1 flex flex-col items-center max-w-lg w-full">
-                    <div className="w-full aspect-square rounded-2xl overflow-hidden shadow-[0_20px_60px_-10px_rgba(0,0,0,0.7)] mb-8 border border-white/10">
+                    <div className="w-full aspect-square rounded-2xl overflow-hidden shadow-[0_20px_60px_-10px_rgba(0,0,0,0.7)] mb-8 border border-white/10 relative">
                         <img src={currentTrack.coverArtUrl} className="w-full h-full object-cover" alt="Cover" />
+                        {currentTrack.isDuet && (
+                           <div className="absolute top-4 right-4 bg-wes-purple/90 backdrop-blur-md px-3 py-1 rounded-full flex items-center space-x-1 shadow-lg">
+                               <Users className="w-3 h-3 text-white" />
+                               <span className="text-xs font-bold text-white uppercase tracking-wider">Duet</span>
+                           </div>
+                        )}
                     </div>
                     
-                    <div className="w-full space-y-2 mb-6">
+                    <div className="w-full space-y-2 mb-6 text-center md:text-left">
                         <h2 className="text-3xl font-bold truncate">{currentTrack.title}</h2>
                         <p className="text-xl text-gray-400">{currentTrack.artist}</p>
                     </div>
@@ -129,7 +135,10 @@ export const Player: React.FC<PlayerProps> = ({ currentTrack }) => {
            </div>
         </div>
         <div>
-          <h4 className="text-white font-semibold truncate text-sm">{currentTrack.title}</h4>
+          <h4 className="text-white font-semibold truncate text-sm flex items-center">
+             {currentTrack.title}
+             {currentTrack.isDuet && <Users size={10} className="ml-2 text-wes-purple" />}
+          </h4>
           <p className="text-xs text-gray-400">{currentTrack.artist}</p>
         </div>
       </div>

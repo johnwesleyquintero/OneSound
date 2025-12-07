@@ -13,6 +13,10 @@ const getClient = () => {
 export const generateSongConcept = async (params: GenerationParams): Promise<Partial<Song>> => {
   const ai = getClient();
   
+  const duetInstruction = params.isDuet 
+    ? `Format the lyrics as a duet between two people. Prefix every line with either "Speaker 1:" or "Speaker 2:". Create a dynamic interaction.` 
+    : "Output standard lyrics.";
+
   const prompt = `
     Act as an expert music producer and songwriter.
     Create a detailed song concept for a track with the following parameters:
@@ -20,6 +24,7 @@ export const generateSongConcept = async (params: GenerationParams): Promise<Par
     Mood: ${params.mood}
     Description: ${params.description}
     Vocals: ${params.hasVocals ? "Yes" : "Instrumental"}
+    ${duetInstruction}
     ${params.customLyrics ? `Use these lyrics as a base: ${params.customLyrics}` : "Write original lyrics."}
 
     Output a JSON object containing:
@@ -112,29 +117,52 @@ export const generateCoverArt = async (song: Partial<Song>): Promise<string> => 
   }
 };
 
-export const generateVocals = async (lyrics: string[], voiceName: string = 'Kore'): Promise<string> => {
+export const generateVocals = async (lyrics: string[], voiceName: string = 'Kore', secondaryVoiceName?: string): Promise<string> => {
     const ai = getClient();
     
-    // Join lyrics into a coherent prompt, stripping out [brackets] which usually denote song structure
+    // Join lyrics
     const spokenText = lyrics
         .filter(line => !line.startsWith('['))
-        .join(". ");
+        .join("\n");
 
     if (!spokenText.trim()) {
         return ""; // No vocals to generate
     }
 
     try {
+        let speechConfig = {};
+
+        if (secondaryVoiceName) {
+            // Multi-speaker config
+            speechConfig = {
+                multiSpeakerVoiceConfig: {
+                    speakerVoiceConfigs: [
+                        {
+                            speaker: 'Speaker 1',
+                            voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } }
+                        },
+                        {
+                            speaker: 'Speaker 2',
+                            voiceConfig: { prebuiltVoiceConfig: { voiceName: secondaryVoiceName } }
+                        }
+                    ]
+                }
+            };
+        } else {
+            // Single speaker config
+            speechConfig = {
+                voiceConfig: {
+                    prebuiltVoiceConfig: { voiceName: voiceName },
+                },
+            };
+        }
+
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",
             contents: [{ parts: [{ text: spokenText }] }],
             config: {
                 responseModalities: [Modality.AUDIO],
-                speechConfig: {
-                    voiceConfig: {
-                        prebuiltVoiceConfig: { voiceName: voiceName },
-                    },
-                },
+                speechConfig: speechConfig,
             },
         });
 
