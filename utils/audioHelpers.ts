@@ -381,7 +381,7 @@ export const mixAudioTracks = async (
 };
 
 // Helper to convert AudioBuffer to WAV Blob
-const bufferToWav = (abuffer: AudioBuffer) => {
+export const bufferToWav = (abuffer: AudioBuffer) => {
   const numOfChan = abuffer.numberOfChannels;
   const length = abuffer.length * numOfChan * 2 + 44;
   const buffer = new ArrayBuffer(length);

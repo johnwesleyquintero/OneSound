@@ -27,13 +27,14 @@ export const generateSongConcept = async (params: GenerationParams): Promise<Par
     ${duetInstruction}
     ${params.customLyrics ? `Use these lyrics as a base: ${params.customLyrics}` : "Write original lyrics."}
 
+    STRICT JSON OUTPUT REQUIRED.
     Output a JSON object containing:
-    - title (Creative song title)
+    - title (String. Max 6 words. Creative, evocative, and concise. Do NOT include parentheses, descriptions, alternative titles, or commentary. JUST the title.)
     - lyrics (An array of strings, where each string is a line. If instrumental, describe the sections like '[Chorus - Exploding synths]')
     - bpm (Number, tempo between 60-160)
     - instruments (Array of strings)
     - duration (Estimated duration in seconds)
-    - description (Short vibe description)
+    - description (Short vibe description, max 2 sentences)
     - musicalElements (Object):
         - key (e.g., "C", "F#", "Am")
         - scale (e.g., "Major", "Minor", "Dorian")

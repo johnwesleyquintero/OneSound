@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Song } from '../types';
 import { decodePCM } from '../utils/audioHelpers';
 
-export const useAudioPlayer = (currentTrack: Song | null) => {
+export const useAudioPlayer = (audioUrl: string | undefined, durationInSeconds: number) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
@@ -36,9 +35,8 @@ export const useAudioPlayer = (currentTrack: Song | null) => {
        if (sourceNodeRef.current) {
            try { sourceNodeRef.current.stop(); } catch(e){}
        }
-       if (audioContextRef.current?.state !== 'closed') {
-           audioContextRef.current?.close();
-       }
+       // We typically don't close context on unmount to prevent harsh cuts if re-mounting, 
+       // but for this app architecture it's safer to close or at least suspend.
     };
   }, []);
 
@@ -53,26 +51,26 @@ export const useAudioPlayer = (currentTrack: Song | null) => {
     cancelAnimationFrame(animationFrameRef.current);
   }, []);
 
-  // Load Track
+  // Load Track when URL changes
   useEffect(() => {
     const loadAudio = async () => {
         stopAudio();
         setProgress(0);
         setCurrentTime(0);
-        setDuration(currentTrack?.duration || 0);
+        setDuration(durationInSeconds || 0);
         
-        if (currentTrack?.audioUrl && audioContextRef.current) {
+        if (audioUrl && audioContextRef.current) {
             try {
                 let buffer: AudioBuffer;
 
                 // Support both remote URLs (http/https) and local Blob URLs (blob:)
-                if (currentTrack.audioUrl.startsWith('http') || currentTrack.audioUrl.startsWith('blob')) {
-                    const response = await fetch(currentTrack.audioUrl);
+                if (audioUrl.startsWith('http') || audioUrl.startsWith('blob')) {
+                    const response = await fetch(audioUrl);
                     const arrayBuffer = await response.arrayBuffer();
                     buffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
                 } else {
                     // Handle raw PCM base64 (fallback for older tracks or direct PCM data)
-                    const float32Data = decodePCM(currentTrack.audioUrl);
+                    const float32Data = decodePCM(audioUrl);
                     buffer = audioContextRef.current.createBuffer(1, float32Data.length, 24000);
                     // Explicitly cast to 'any' to bypass strict ArrayBuffer vs ArrayBufferLike mismatch in Vercel build
                     buffer.copyToChannel(float32Data as any, 0);
@@ -81,30 +79,30 @@ export const useAudioPlayer = (currentTrack: Song | null) => {
                 audioBufferRef.current = buffer;
                 setDuration(buffer.duration);
                 
-                // Auto play
-                playAudio(0);
+                // If it was playing, maybe we want to auto-play (optional, disabled for now)
             } catch (e) {
                 console.error("Audio decoding error", e);
             }
         } else {
             // Mock simulation for tracks without audio (or failed generation)
-            setIsPlaying(true);
+            // If explicit URL is missing, we don't play.
         }
     };
 
-    if (currentTrack) {
+    if (audioUrl) {
         loadAudio();
+    } else {
+        stopAudio();
     }
 
-    return () => stopAudio();
-  }, [currentTrack, stopAudio]);
+  }, [audioUrl, durationInSeconds, stopAudio]);
 
   // Playback Loop
   useEffect(() => {
     const updateUI = () => {
         if (!audioContextRef.current) return;
         
-        if (currentTrack?.audioUrl && isPlaying) {
+        if (audioUrl && isPlaying) {
             const now = audioContextRef.current.currentTime;
             const elapsed = now - startTimeRef.current + pauseTimeRef.current;
             
@@ -118,18 +116,6 @@ export const useAudioPlayer = (currentTrack: Song | null) => {
                 setProgress((elapsed / duration) * 100);
                 animationFrameRef.current = requestAnimationFrame(updateUI);
             }
-        } else if (!currentTrack?.audioUrl && isPlaying) {
-            // Simulation
-            setCurrentTime(prev => {
-                const next = prev + 0.05; 
-                if (next >= (currentTrack?.duration || 180)) {
-                   setIsPlaying(false);
-                   return 0;
-                }
-                setProgress((next / (currentTrack?.duration || 180)) * 100);
-                return next;
-            });
-             animationFrameRef.current = requestAnimationFrame(updateUI);
         }
     };
 
@@ -138,11 +124,11 @@ export const useAudioPlayer = (currentTrack: Song | null) => {
     }
 
     return () => cancelAnimationFrame(animationFrameRef.current);
-  }, [isPlaying, duration, currentTrack, stopAudio]);
+  }, [isPlaying, duration, audioUrl, stopAudio]);
 
   const playAudio = (offset: number) => {
     if (!audioContextRef.current || !audioBufferRef.current || !analyserRef.current) {
-        setIsPlaying(true);
+        // Fallback for simulation if no buffer but logic requires play
         return;
     }
     

@@ -6,7 +6,8 @@ export interface Song {
   mood: string;
   lyrics: string[]; // Array of lines
   coverArtUrl?: string; // Base64
-  audioUrl?: string; // Blob URL for the generated audio
+  audioUrl?: string; // Blob URL for the generated audio (Full Mix)
+  backingUrl?: string; // Blob URL for the instrumental
   duration: number; // in seconds
   createdAt: Date;
   status: 'concept' | 'generating' | 'ready' | 'failed';

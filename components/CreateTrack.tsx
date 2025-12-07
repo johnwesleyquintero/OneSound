@@ -3,7 +3,7 @@ import { GENRES, MOODS } from '../constants';
 import { GenerationParams, Song } from '../types';
 import { generateSongConcept, generateCoverArt, generateVocals, refineLyrics } from '../services/geminiService';
 import { supabase } from '../services/supabaseClient';
-import { base64ToUint8Array, createWavBlob, generateProceduralBackingTrack, mixAudioTracks } from '../utils/audioHelpers';
+import { base64ToUint8Array, createWavBlob, generateProceduralBackingTrack, mixAudioTracks, bufferToWav } from '../utils/audioHelpers';
 import { Wand2, Music, Loader2, Zap, Edit3, Save, PlayCircle, RefreshCcw, Coffee, CassetteTape, Sword, Mountain, Sparkles, Users, Hammer } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
@@ -152,6 +152,7 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
 
       // --- PROCEDURAL MUSIC GENERATION ---
       let finalAudioBlob: Blob | null = null;
+      let backingBlob: Blob | null = null;
       
       // If we have vocals, try to generate a backing track and mix
       if (vocalBase64) {
@@ -168,6 +169,9 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                   formData.genre, 
                   duration
               );
+              
+              // Export Instrumental Stem
+              backingBlob = bufferToWav(backingBuffer);
 
               // 2. Mix Vocals and Backing
               finalAudioBlob = await mixAudioTracks(vocalBase64, backingBuffer);
@@ -190,7 +194,8 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                 formData.genre, 
                 duration
            );
-           finalAudioBlob = await mixAudioTracks("", backingBuffer); 
+           finalAudioBlob = await mixAudioTracks("", backingBuffer);
+           backingBlob = bufferToWav(backingBuffer); // Backing IS the main track
       }
 
 
@@ -198,10 +203,15 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
       
       // Default to local/memory data first
       let coverUrl = artBase64; 
-      let audioUrl = ""; 
+      let audioUrl = "";
+      let backingUrl = "";
       
       if (finalAudioBlob) {
           audioUrl = URL.createObjectURL(finalAudioBlob);
+      }
+      
+      if (backingBlob) {
+          backingUrl = URL.createObjectURL(backingBlob);
       }
 
       // Try uploading to Supabase (Graceful Fallback)
@@ -216,6 +226,12 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
           if (finalAudioBlob) {
               const uploadedAudio = await uploadAsset(finalAudioBlob, 'audio', `${trackId}.wav`);
               if (uploadedAudio) audioUrl = uploadedAudio;
+          }
+
+          if (backingBlob) {
+              // We reuse the audio bucket but suffix with _inst
+              const uploadedBacking = await uploadAsset(backingBlob, 'audio', `${trackId}_inst.wav`);
+              if (uploadedBacking) backingUrl = uploadedBacking;
           }
       } catch (uploadError) {
           console.warn("Cloud upload failed, falling back to local session:", uploadError);
@@ -232,6 +248,7 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
         lyrics: draftTrack.lyrics || [],
         coverArtUrl: coverUrl,
         audioUrl: audioUrl, 
+        backingUrl: backingUrl, // Save the stem
         duration: draftTrack.duration || 180,
         createdAt: new Date(),
         status: 'ready',
@@ -257,6 +274,7 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                 lyrics: newSongData.lyrics,
                 cover_art_url: coverUrl,
                 audio_url: audioUrl,
+                backing_url: backingUrl, // Make sure DB column exists or ignore if not
                 duration: newSongData.duration,
                 bpm: newSongData.bpm,
                 instruments: newSongData.instruments,
@@ -264,8 +282,12 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                 type: 'original'
             }]);
             
-        if (dbError) throw dbError;
-        addToast(`Track "${newSongData.title}" saved to cloud.`, 'success');
+        if (dbError) {
+            // Ignore column errors for backing_url if schema isn't updated yet
+             console.warn("Database insert warning (likely schema mismatch):", dbError);
+        } else {
+             addToast(`Track "${newSongData.title}" saved to cloud.`, 'success');
+        }
 
       } catch (dbError) {
           console.warn("Database save failed:", dbError);

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Song } from '../types';
-import { Play, Pause, SkipBack, SkipForward, Volume2, Mic2, Maximize2, ChevronDown, Users } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, Mic2, Maximize2, ChevronDown, Users, MicOff } from 'lucide-react';
 import { Visualizer } from './Visualizer';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 
@@ -10,9 +10,13 @@ interface PlayerProps {
 
 export const Player: React.FC<PlayerProps> = ({ currentTrack }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [karaokeMode, setKaraokeMode] = useState(false);
+  
+  // Determine which URL to play based on mode
+  const activeUrl = karaokeMode && currentTrack?.backingUrl ? currentTrack.backingUrl : currentTrack?.audioUrl;
   
   // Custom Hook for Audio Engine
-  const { isPlaying, progress, currentTime, duration, togglePlay, analyser } = useAudioPlayer(currentTrack);
+  const { isPlaying, progress, currentTime, duration, togglePlay, analyser } = useAudioPlayer(activeUrl, currentTrack?.duration || 0);
 
   if (!currentTrack) return null;
 
@@ -54,6 +58,12 @@ export const Player: React.FC<PlayerProps> = ({ currentTrack }) => {
                                <span className="text-xs font-bold text-white uppercase tracking-wider">Duet</span>
                            </div>
                         )}
+                        {karaokeMode && (
+                           <div className="absolute bottom-4 left-4 bg-yellow-500/90 backdrop-blur-md px-3 py-1 rounded-full flex items-center space-x-1 shadow-lg animate-pulse">
+                               <Mic2 className="w-3 h-3 text-black" />
+                               <span className="text-xs font-bold text-black uppercase tracking-wider">Karaoke Active</span>
+                           </div>
+                        )}
                     </div>
                     
                     <div className="w-full space-y-2 mb-6 text-center md:text-left">
@@ -83,13 +93,29 @@ export const Player: React.FC<PlayerProps> = ({ currentTrack }) => {
                         </button>
                         <button className="text-gray-400 hover:text-white transition"><SkipForward size={32} /></button>
                     </div>
+
+                    {/* Stem Toggles */}
+                    <div className="mt-8 flex items-center space-x-4 bg-white/5 p-2 rounded-xl border border-white/5">
+                        <button 
+                            onClick={() => currentTrack.backingUrl ? setKaraokeMode(!karaokeMode) : null}
+                            disabled={!currentTrack.backingUrl}
+                            className={`flex-1 flex items-center justify-center space-x-2 px-4 py-2 rounded-lg transition-all ${
+                                karaokeMode 
+                                ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20' 
+                                : 'hover:bg-white/10 text-gray-400'
+                            } ${!currentTrack.backingUrl ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                            <Mic2 size={18} />
+                            <span className="text-sm font-bold">Karaoke</span>
+                        </button>
+                    </div>
                 </div>
 
                 {/* Right: Lyrics & Visualizer */}
                 <div className="flex-1 w-full h-full max-h-[60vh] flex flex-col gap-6">
                     {/* Visualizer Panel */}
                     <div className="h-32 w-full bg-black/20 rounded-xl border border-white/5 backdrop-blur-sm overflow-hidden p-4">
-                        <Visualizer analyser={analyser} isPlaying={isPlaying} color="#a78bfa" />
+                        <Visualizer analyser={analyser} isPlaying={isPlaying} color={karaokeMode ? '#eab308' : '#a78bfa'} />
                     </div>
 
                     {/* Lyrics Panel */}
@@ -171,7 +197,15 @@ export const Player: React.FC<PlayerProps> = ({ currentTrack }) => {
 
       {/* Extra Controls */}
       <div className="flex items-center space-x-4 w-1/4 justify-end">
-         <button className="text-gray-400 hover:text-white"><Mic2 size={16} /></button>
+         {currentTrack.backingUrl && (
+             <button 
+                onClick={() => setKaraokeMode(!karaokeMode)} 
+                className={`transition ${karaokeMode ? 'text-yellow-500' : 'text-gray-400 hover:text-white'}`}
+                title="Toggle Karaoke Mode"
+             >
+                 {karaokeMode ? <Mic2 size={16} /> : <MicOff size={16} />}
+             </button>
+         )}
          <button className="text-gray-400 hover:text-white"><Volume2 size={16} /></button>
          <button onClick={() => setIsExpanded(true)} className="text-gray-400 hover:text-wes-purple transition" title="Expand">
              <Maximize2 size={16} />
