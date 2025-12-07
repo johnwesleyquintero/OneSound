@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { GENRES, MOODS } from '../constants';
 import { GenerationParams, Song } from '../types';
@@ -60,27 +59,41 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
 
       setStep('saving');
 
-      // 3. Process & Upload to Supabase
+      // 3. Process Logic
       const trackId = crypto.randomUUID();
-      let coverUrl = "";
-      let audioUrl = "";
-
-      // Upload Cover
-      if (artBase64) {
-          const res = await fetch(artBase64);
-          const blob = await res.blob();
-          coverUrl = await uploadAsset(blob, 'covers', `${trackId}.png`);
-      }
-
-      // Upload Audio
+      
+      // Default to local/memory data first
+      let coverUrl = artBase64; 
+      let audioUrl = ""; 
+      
+      let audioBlob: Blob | null = null;
       if (audioBase64) {
           const pcmData = base64ToUint8Array(audioBase64);
-          const wavBlob = createWavBlob(pcmData, 24000); // 24kHz standard for Gemini TTS
-          audioUrl = await uploadAsset(wavBlob, 'audio', `${trackId}.wav`);
+          audioBlob = createWavBlob(pcmData, 24000); // 24kHz standard for Gemini TTS
+          audioUrl = URL.createObjectURL(audioBlob);
       }
 
-      // 4. Save to DB
-      const newSongData: Partial<Song> = {
+      // Try uploading to Supabase (Graceful Fallback)
+      try {
+          if (artBase64) {
+              const res = await fetch(artBase64);
+              const blob = await res.blob();
+              // Try upload, if it fails, we still have the base64/blob URL
+              const uploadedCover = await uploadAsset(blob, 'covers', `${trackId}.png`);
+              if (uploadedCover) coverUrl = uploadedCover;
+          }
+
+          if (audioBlob) {
+              const uploadedAudio = await uploadAsset(audioBlob, 'audio', `${trackId}.wav`);
+              if (uploadedAudio) audioUrl = uploadedAudio;
+          }
+      } catch (uploadError) {
+          console.warn("Cloud upload failed, falling back to local session:", uploadError);
+          addToast("Cloud storage unavailable. Track saved to local session.", 'info');
+      }
+
+      // 4. Construct Song Object
+      const newSongData: Song = {
         id: trackId,
         title: concept.title || "Untitled Track",
         artist: "WesAI User",
@@ -88,7 +101,7 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
         mood: formData.mood,
         lyrics: concept.lyrics || [],
         coverArtUrl: coverUrl,
-        audioUrl: audioUrl, // Now a real URL
+        audioUrl: audioUrl, 
         duration: concept.duration || 180,
         createdAt: new Date(),
         status: 'ready',
@@ -98,36 +111,35 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
         description: concept.description
       };
 
-      const { data, error: dbError } = await supabase
-        .from('tracks')
-        .insert([{
-             id: trackId,
-             title: newSongData.title,
-             artist: newSongData.artist,
-             genre: newSongData.genre,
-             mood: newSongData.mood,
-             lyrics: newSongData.lyrics,
-             cover_art_url: coverUrl,
-             audio_url: audioUrl,
-             duration: newSongData.duration,
-             bpm: newSongData.bpm,
-             instruments: newSongData.instruments,
-             description: newSongData.description,
-             type: 'original'
-        }])
-        .select()
-        .single();
+      // Try inserting into DB (Graceful Fallback)
+      try {
+        const { error: dbError } = await supabase
+            .from('tracks')
+            .insert([{
+                id: trackId,
+                title: newSongData.title,
+                artist: newSongData.artist,
+                genre: newSongData.genre,
+                mood: newSongData.mood,
+                lyrics: newSongData.lyrics,
+                cover_art_url: coverUrl,
+                audio_url: audioUrl,
+                duration: newSongData.duration,
+                bpm: newSongData.bpm,
+                instruments: newSongData.instruments,
+                description: newSongData.description,
+                type: 'original'
+            }]);
+            
+        if (dbError) throw dbError;
+        addToast(`Track "${newSongData.title}" saved to cloud.`, 'success');
 
-      if (dbError) throw dbError;
+      } catch (dbError) {
+          console.warn("Database save failed:", dbError);
+          // We still proceed because we want the user to see their result in the session
+      }
 
-      // Map back to Song type
-      const newSong: Song = {
-          ...newSongData,
-          createdAt: new Date(data.created_at)
-      } as Song;
-
-      addToast(`Track "${newSong.title}" created successfully.`, 'success');
-      onTrackCreated(newSong);
+      onTrackCreated(newSongData);
 
     } catch (err) {
       console.error(err);
@@ -142,7 +154,7 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
       switch(step) {
           case 'composing': return 'Composing Lyrics & Structure...';
           case 'producing': return 'Parallel Processing: Art & Vocals...';
-          case 'saving': return 'Mastering & Uploading to Cloud...';
+          case 'saving': return 'Mastering & Finalizing...';
           default: return 'Generate Track';
       }
   };

@@ -57,8 +57,11 @@ export const generateSongConcept = async (params: GenerationParams): Promise<Par
       }
     });
 
-    const text = response.text;
+    let text = response.text;
     if (!text) throw new Error("No text response from Gemini");
+    
+    // Clean potential markdown fences
+    text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '');
     
     return JSON.parse(text) as Partial<Song>;
   } catch (error) {
@@ -140,25 +143,6 @@ export const generateVocals = async (lyrics: string[], voiceName: string = 'Kore
             throw new Error("No audio data returned");
         }
 
-        // Convert base64 to Blob
-        const binaryString = atob(base64Audio);
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-        }
-        
-        const blob = new Blob([bytes], { type: 'audio/pcm' }); 
-        // Note: The raw output is PCM, but for simple HTML5 playback without a custom decoder context,
-        // we might have issues. However, modern browsers are getting better.
-        // If this raw PCM doesn't play in standard <audio>, we typically need a WAV header.
-        // For simplicity in this demo, we will try to pass it. 
-        // *Self-Correction*: The browser <audio> tag cannot play raw PCM without a container (WAV).
-        // Since we don't have a WAV encoder library imported, we will assume for this 
-        // specific context we might need to rely on the Player component to handle raw data 
-        // OR we just return the base64 and handle decoding in the player.
-        // Let's return the base64 string directly to be decoded by the AudioContext in Player.tsx.
-        
         return base64Audio; 
 
     } catch (error) {

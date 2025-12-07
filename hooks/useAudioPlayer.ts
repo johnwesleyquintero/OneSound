@@ -65,13 +65,13 @@ export const useAudioPlayer = (currentTrack: Song | null) => {
             try {
                 let buffer: AudioBuffer;
 
-                if (currentTrack.audioUrl.startsWith('http')) {
-                    // Fetch from Supabase / URL
+                // Support both remote URLs (http/https) and local Blob URLs (blob:)
+                if (currentTrack.audioUrl.startsWith('http') || currentTrack.audioUrl.startsWith('blob')) {
                     const response = await fetch(currentTrack.audioUrl);
                     const arrayBuffer = await response.arrayBuffer();
                     buffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
                 } else {
-                    // Handle raw PCM base64
+                    // Handle raw PCM base64 (fallback for older tracks or direct PCM data)
                     const float32Data = decodePCM(currentTrack.audioUrl);
                     buffer = audioContextRef.current.createBuffer(1, float32Data.length, 24000);
                     // Explicitly cast to 'any' to bypass strict ArrayBuffer vs ArrayBufferLike mismatch in Vercel build
