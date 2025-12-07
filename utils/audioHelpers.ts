@@ -8,6 +8,17 @@ export const base64ToUint8Array = (base64: string): Uint8Array => {
   return bytes;
 };
 
+export const decodePCM = (base64: string): Float32Array => {
+  const bytes = base64ToUint8Array(base64);
+  const dataInt16 = new Int16Array(bytes.buffer);
+  const float32Data = new Float32Array(dataInt16.length);
+  
+  for (let i = 0; i < dataInt16.length; i++) {
+    float32Data[i] = dataInt16[i] / 32768.0;
+  }
+  return float32Data;
+};
+
 export const createWavBlob = (pcmData: Uint8Array, sampleRate: number = 24000): Blob => {
   const numChannels = 1;
   const bitsPerSample = 16;

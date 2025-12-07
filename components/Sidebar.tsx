@@ -1,13 +1,15 @@
 import React from 'react';
 import { AppView } from '../types';
-import { Disc, Mic2, LayoutDashboard, Library, Settings, Sparkles } from 'lucide-react';
+import { Disc, Mic2, LayoutDashboard, Library, Settings, LogOut } from 'lucide-react';
+import { Logo } from './Logo';
 
 interface SidebarProps {
   currentView: AppView;
   onChangeView: (view: AppView) => void;
+  onLogout: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, onLogout }) => {
   
   const NavItem = ({ view, icon: Icon, label }: { view: AppView; icon: any; label: string }) => {
     const isActive = currentView === view;
@@ -29,8 +31,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView }) =
   return (
     <div className="w-64 h-screen bg-wes-900 border-r border-wes-800 flex flex-col p-4 fixed left-0 top-0 z-20">
       <div className="flex items-center space-x-3 px-4 py-6 mb-4">
-        <div className="w-10 h-10 bg-gradient-to-br from-wes-purple to-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-purple-900/20">
-            <Sparkles className="text-white w-6 h-6" />
+        <div className="shadow-lg shadow-purple-900/20 rounded-xl transition-transform hover:scale-105">
+            <Logo className="w-10 h-10" />
         </div>
         <div>
           <h1 className="text-xl font-bold tracking-tight text-white">OneSound</h1>
@@ -49,12 +51,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView }) =
         <NavItem view={AppView.SETTINGS} icon={Settings} label="Settings" />
       </div>
 
-      <div className="p-4 bg-wes-800/40 rounded-xl border border-wes-800 mt-auto">
-        <div className="flex items-center space-x-3 mb-2">
-          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-          <span className="text-xs text-gray-400">System Operational</span>
+      <div className="mt-auto space-y-4">
+        <button 
+            onClick={onLogout}
+            className="w-full flex items-center space-x-3 px-4 py-3 text-gray-500 hover:text-red-400 hover:bg-red-900/10 rounded-xl transition-all duration-200"
+        >
+            <LogOut className="w-5 h-5" />
+            <span className="font-medium text-sm">Sign Out</span>
+        </button>
+
+        <div className="p-4 bg-wes-800/40 rounded-xl border border-wes-800">
+            <div className="flex items-center space-x-3 mb-2">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+            <span className="text-xs text-gray-400">System Operational</span>
+            </div>
+            <p className="text-xs text-gray-500">"Let's build, brother."</p>
         </div>
-        <p className="text-xs text-gray-500">"Let's build, brother."</p>
       </div>
     </div>
   );

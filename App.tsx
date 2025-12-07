@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Player } from './components/Player';
 import { CreateTrack } from './components/CreateTrack';
@@ -6,59 +6,29 @@ import { RemasterTrack } from './components/RemasterTrack';
 import { Settings } from './components/Settings';
 import { LandingPage } from './components/LandingPage';
 import { AppView, Song, UserProfile } from './types';
-import { supabase } from './services/supabaseClient';
 import { Play, MoreHorizontal } from 'lucide-react';
+import { useLibrary } from './hooks/useLibrary';
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
-  const [history, setHistory] = useState<Song[]>([]);
   const [currentTrack, setCurrentTrack] = useState<Song | null>(null);
 
-  // Fetch tracks from Supabase
-  useEffect(() => {
-    if (!user) return; // Only fetch if logged in
-
-    const fetchTracks = async () => {
-      const { data, error } = await supabase
-        .from('tracks')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error("Error fetching tracks:", error);
-      } else if (data) {
-        // Map DB fields to Song type
-        const mappedSongs: Song[] = data.map((t: any) => ({
-          id: t.id,
-          title: t.title,
-          artist: t.artist,
-          genre: t.genre,
-          mood: t.mood,
-          lyrics: t.lyrics,
-          coverArtUrl: t.cover_art_url,
-          audioUrl: t.audio_url,
-          duration: t.duration,
-          createdAt: new Date(t.created_at),
-          status: t.status,
-          bpm: t.bpm,
-          instruments: t.instruments,
-          type: t.type,
-          description: t.description
-        }));
-        setHistory(mappedSongs);
-      }
-    };
-
-    fetchTracks();
-  }, [currentView, user]);
+  // Use custom hook for library management
+  const { history, addTrack } = useLibrary(user);
 
   const handleLogin = (loggedInUser: UserProfile) => {
     setUser(loggedInUser);
   };
 
+  const handleLogout = () => {
+    setUser(null);
+    setCurrentTrack(null);
+    setCurrentView(AppView.DASHBOARD);
+  };
+
   const handleTrackCreated = (track: Song) => {
-    setHistory([track, ...history]);
+    addTrack(track);
     setCurrentTrack(track);
     setCurrentView(AppView.LIBRARY); 
   };
@@ -167,7 +137,7 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen bg-black font-sans text-gray-100">
-      <Sidebar currentView={currentView} onChangeView={setCurrentView} />
+      <Sidebar currentView={currentView} onChangeView={setCurrentView} onLogout={handleLogout} />
       
       <main className="flex-1 ml-64 pb-24 relative z-10">
         <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-wes-900 to-black z-0 pointer-events-none"></div>

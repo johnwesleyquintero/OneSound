@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Sparkles, Music, Mic2, Disc } from 'lucide-react';
+import { Music, Mic2, Disc } from 'lucide-react';
 import { UserProfile } from '../types';
+import { Logo } from './Logo';
 
 interface LandingPageProps {
   onLogin: (user: UserProfile) => void;
@@ -92,8 +93,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
 
         {/* Content */}
         <div className="relative z-10">
-          <div className="w-12 h-12 bg-gradient-to-br from-wes-purple to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-purple-900/30 mb-8">
-             <Sparkles className="text-white w-6 h-6" />
+          <div className="w-16 h-16 shadow-2xl shadow-purple-900/50 mb-8 rounded-2xl overflow-hidden">
+             <Logo className="w-full h-full" />
           </div>
           <h1 className="text-7xl font-bold text-white tracking-tight leading-tight mb-6">
             Redefine<br/>

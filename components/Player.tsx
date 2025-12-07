@@ -1,194 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { Song } from '../types';
-import { Play, Pause, SkipBack, SkipForward, Volume2, Mic2, Maximize2, Minimize2, ChevronDown } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, Mic2, Maximize2, ChevronDown } from 'lucide-react';
 import { Visualizer } from './Visualizer';
+import { useAudioPlayer } from '../hooks/useAudioPlayer';
 
 interface PlayerProps {
   currentTrack: Song | null;
 }
 
 export const Player: React.FC<PlayerProps> = ({ currentTrack }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
   
-  // Audio Engine Refs
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  
-  const startTimeRef = useRef<number>(0);
-  const pauseTimeRef = useRef<number>(0);
-  const animationFrameRef = useRef<number>(0);
-  const audioBufferRef = useRef<AudioBuffer | null>(null);
-
-  // Initialize Audio Context & Analyser
-  useEffect(() => {
-    if (!audioContextRef.current) {
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        const ctx = new AudioContextClass({ sampleRate: 24000 });
-        audioContextRef.current = ctx;
-
-        // Create Analyser
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 256;
-        analyserRef.current = analyser;
-    }
-  }, []);
-
-  // Load Track
-  useEffect(() => {
-    const loadAudio = async () => {
-        stopAudio();
-        setProgress(0);
-        setCurrentTime(0);
-        setDuration(currentTrack?.duration || 0);
-        
-        if (currentTrack?.audioUrl && audioContextRef.current) {
-            try {
-                let buffer: AudioBuffer;
-
-                if (currentTrack.audioUrl.startsWith('http')) {
-                    // Fetch from Supabase / URL
-                    const response = await fetch(currentTrack.audioUrl);
-                    const arrayBuffer = await response.arrayBuffer();
-                    buffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
-                } else {
-                    // Fallback for legacy Base64 (if any exists in local state)
-                    const binaryString = atob(currentTrack.audioUrl);
-                    const len = binaryString.length;
-                    const bytes = new Uint8Array(len);
-                    for (let i = 0; i < len; i++) {
-                        bytes[i] = binaryString.charCodeAt(i);
-                    }
-                    const dataInt16 = new Int16Array(bytes.buffer);
-                    const channelCount = 1;
-                    const sampleRate = 24000; 
-                    const frameCount = dataInt16.length;
-                    buffer = audioContextRef.current.createBuffer(channelCount, frameCount, sampleRate);
-                    const channelData = buffer.getChannelData(0);
-                    for (let i = 0; i < frameCount; i++) {
-                        channelData[i] = dataInt16[i] / 32768.0;
-                    }
-                }
-                
-                audioBufferRef.current = buffer;
-                setDuration(buffer.duration);
-                
-                // Auto play
-                playAudio(0);
-            } catch (e) {
-                console.error("Audio decoding error", e);
-            }
-        } else {
-            // Mock simulation for tracks without audio
-            setIsPlaying(true);
-        }
-    };
-
-    if (currentTrack) {
-        loadAudio();
-    }
-
-    return () => stopAudio();
-  }, [currentTrack]);
-
-  // Playback Loop
-  useEffect(() => {
-    const updateUI = () => {
-        if (!audioContextRef.current) return;
-        
-        if (currentTrack?.audioUrl && isPlaying) {
-            const now = audioContextRef.current.currentTime;
-            const elapsed = now - startTimeRef.current + pauseTimeRef.current;
-            
-            if (elapsed >= duration) {
-                setIsPlaying(false);
-                setCurrentTime(duration);
-                setProgress(100);
-                stopAudio(); 
-            } else {
-                setCurrentTime(elapsed);
-                setProgress((elapsed / duration) * 100);
-                animationFrameRef.current = requestAnimationFrame(updateUI);
-            }
-        } else if (!currentTrack?.audioUrl && isPlaying) {
-            // Simulation
-            setCurrentTime(prev => {
-                const next = prev + 0.05; 
-                if (next >= (currentTrack?.duration || 180)) {
-                   setIsPlaying(false);
-                   return 0;
-                }
-                setProgress((next / (currentTrack?.duration || 180)) * 100);
-                return next;
-            });
-             animationFrameRef.current = requestAnimationFrame(updateUI);
-        }
-    };
-
-    if (isPlaying) {
-        animationFrameRef.current = requestAnimationFrame(updateUI);
-    }
-
-    return () => cancelAnimationFrame(animationFrameRef.current);
-  }, [isPlaying, duration, currentTrack]);
-
-  const playAudio = (offset: number) => {
-    if (!audioContextRef.current || !audioBufferRef.current || !analyserRef.current) {
-        setIsPlaying(true);
-        return;
-    }
-    
-    if (sourceNodeRef.current) {
-        try { sourceNodeRef.current.stop(); } catch(e){}
-        sourceNodeRef.current.disconnect();
-    }
-
-    const source = audioContextRef.current.createBufferSource();
-    source.buffer = audioBufferRef.current;
-    
-    // Connect Source -> Analyser -> Destination
-    source.connect(analyserRef.current);
-    analyserRef.current.connect(audioContextRef.current.destination);
-    
-    source.start(0, offset);
-    
-    sourceNodeRef.current = source;
-    startTimeRef.current = audioContextRef.current.currentTime;
-    setIsPlaying(true);
-  };
-
-  const pauseAudio = () => {
-    if (sourceNodeRef.current && audioContextRef.current) {
-        sourceNodeRef.current.stop();
-        pauseTimeRef.current += audioContextRef.current.currentTime - startTimeRef.current;
-        setIsPlaying(false);
-    } else {
-        setIsPlaying(false); 
-    }
-  };
-
-  const togglePlay = () => {
-     if (isPlaying) {
-         pauseAudio();
-     } else {
-         playAudio(pauseTimeRef.current);
-     }
-  };
-
-  const stopAudio = () => {
-    if (sourceNodeRef.current) {
-        try { sourceNodeRef.current.stop(); } catch(e){}
-    }
-    pauseTimeRef.current = 0;
-    setIsPlaying(false);
-    setProgress(0);
-    setCurrentTime(0);
-    cancelAnimationFrame(animationFrameRef.current);
-  };
+  // Custom Hook for Audio Engine
+  const { isPlaying, progress, currentTime, duration, togglePlay, analyser } = useAudioPlayer(currentTrack);
 
   if (!currentTrack) return null;
 
@@ -259,7 +83,7 @@ export const Player: React.FC<PlayerProps> = ({ currentTrack }) => {
                 <div className="flex-1 w-full h-full max-h-[60vh] flex flex-col gap-6">
                     {/* Visualizer Panel */}
                     <div className="h-32 w-full bg-black/20 rounded-xl border border-white/5 backdrop-blur-sm overflow-hidden p-4">
-                        <Visualizer analyser={analyserRef.current} isPlaying={isPlaying} color="#a78bfa" />
+                        <Visualizer analyser={analyser} isPlaying={isPlaying} color="#a78bfa" />
                     </div>
 
                     {/* Lyrics Panel */}
