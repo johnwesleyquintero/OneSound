@@ -42,11 +42,14 @@ export const generateSongConcept = async (params: GenerationParams): Promise<Par
   `;
 
   try {
+    // We use gemini-2.5-flash with thinkingConfig to ensure the music theory (chords/key) 
+    // is reasoned out logically before generating the JSON.
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
-        maxOutputTokens: 4096, // Prevent runaway loops
+        maxOutputTokens: 4096, 
+        thinkingConfig: { thinkingBudget: 1024 }, // Allocating budget for musical reasoning
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -114,6 +117,8 @@ export const refineLyrics = async (currentLyrics: string[], instruction: string)
         contents: prompt,
         config: {
           maxOutputTokens: 4096,
+          // Thinking budget helps here for rhyming complexity
+          thinkingConfig: { thinkingBudget: 512 }, 
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
