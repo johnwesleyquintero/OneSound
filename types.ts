@@ -9,7 +9,7 @@ export interface Song {
   audioUrl?: string; // Blob URL for the generated audio
   duration: number; // in seconds
   createdAt: Date;
-  status: 'generating' | 'ready' | 'failed';
+  status: 'concept' | 'generating' | 'ready' | 'failed';
   bpm?: number;
   instruments?: string[];
   description?: string;

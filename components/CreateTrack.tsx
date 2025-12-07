@@ -4,7 +4,7 @@ import { GenerationParams, Song } from '../types';
 import { generateSongConcept, generateCoverArt, generateVocals } from '../services/geminiService';
 import { supabase } from '../services/supabaseClient';
 import { base64ToUint8Array, createWavBlob } from '../utils/audioHelpers';
-import { Wand2, Music, Loader2, Zap } from 'lucide-react';
+import { Wand2, Music, Loader2, Zap, Edit3, Save, PlayCircle, RefreshCcw } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
 interface CreateTrackProps {
@@ -12,9 +12,14 @@ interface CreateTrackProps {
 }
 
 export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
-  const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState<string>('idle'); 
   const { addToast } = useToast();
+  
+  // Phase 1: Input -> Concept
+  // Phase 2: Edit Concept
+  // Phase 3: Production (Art + Audio)
+  const [phase, setPhase] = useState<'input' | 'drafting' | 'production'>('input');
+  const [loading, setLoading] = useState(false);
+  const [draftTrack, setDraftTrack] = useState<Partial<Song> | null>(null);
 
   const [formData, setFormData] = useState<GenerationParams>({
     genre: GENRES[0],
@@ -36,30 +41,43 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
     return publicUrl;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // STEP 1: Generate Concept (Lyrics & Metadata)
+  const handleGenerateConcept = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setStep('composing');
+    addToast("Brainstorming lyrics and composition...", "loading");
 
     try {
-      // 1. Concept
       const concept = await generateSongConcept(formData);
-      
-      setStep('producing');
+      setDraftTrack(concept);
+      setPhase('drafting');
+      addToast("Draft created! Review the lyrics before producing.", "success");
+    } catch (err) {
+      console.error(err);
+      addToast("Failed to generate concept.", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      // 2. Asset Generation
-      const artPromise = generateCoverArt(concept);
+  // STEP 2: Production (Audio & Art)
+  const handleProduction = async () => {
+    if (!draftTrack) return;
+    setPhase('production');
+    setLoading(true);
+    addToast("Entering production phase...", "loading");
+
+    try {
+      // Parallel Generation
+      const artPromise = generateCoverArt(draftTrack);
       let audioPromise = Promise.resolve("");
 
-      if (formData.hasVocals && concept.lyrics) {
-         audioPromise = generateVocals(concept.lyrics, formData.voiceName);
+      if (formData.hasVocals && draftTrack.lyrics) {
+         audioPromise = generateVocals(draftTrack.lyrics, formData.voiceName);
       }
 
       const [artBase64, audioBase64] = await Promise.all([artPromise, audioPromise]);
 
-      setStep('saving');
-
-      // 3. Process Logic
       const trackId = crypto.randomUUID();
       
       // Default to local/memory data first
@@ -78,7 +96,6 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
           if (artBase64) {
               const res = await fetch(artBase64);
               const blob = await res.blob();
-              // Try upload, if it fails, we still have the base64/blob URL
               const uploadedCover = await uploadAsset(blob, 'covers', `${trackId}.png`);
               if (uploadedCover) coverUrl = uploadedCover;
           }
@@ -92,26 +109,26 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
           addToast("Cloud storage unavailable. Track saved to local session.", 'info');
       }
 
-      // 4. Construct Song Object
+      // Construct Song Object
       const newSongData: Song = {
         id: trackId,
-        title: concept.title || "Untitled Track",
+        title: draftTrack.title || "Untitled Track",
         artist: "WesAI User",
         genre: formData.genre,
         mood: formData.mood,
-        lyrics: concept.lyrics || [],
+        lyrics: draftTrack.lyrics || [],
         coverArtUrl: coverUrl,
         audioUrl: audioUrl, 
-        duration: concept.duration || 180,
+        duration: draftTrack.duration || 180,
         createdAt: new Date(),
         status: 'ready',
-        bpm: concept.bpm,
-        instruments: concept.instruments,
+        bpm: draftTrack.bpm,
+        instruments: draftTrack.instruments,
         type: 'original',
-        description: concept.description
+        description: draftTrack.description
       };
 
-      // Try inserting into DB (Graceful Fallback)
+      // Try inserting into DB
       try {
         const { error: dbError } = await supabase
             .from('tracks')
@@ -136,169 +153,243 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
 
       } catch (dbError) {
           console.warn("Database save failed:", dbError);
-          // We still proceed because we want the user to see their result in the session
       }
 
       onTrackCreated(newSongData);
 
     } catch (err) {
       console.error(err);
-      addToast("Failed to generate track. Please try again.", 'error');
+      addToast("Failed to produce track. Please try again.", 'error');
+      setPhase('drafting'); // Go back to draft if failed
     } finally {
       setLoading(false);
-      setStep('idle');
     }
   };
 
-  const getStepLabel = () => {
-      switch(step) {
-          case 'composing': return 'Composing Lyrics & Structure...';
-          case 'producing': return 'Parallel Processing: Art & Vocals...';
-          case 'saving': return 'Mastering & Finalizing...';
-          default: return 'Generate Track';
-      }
+  const handleUpdateDraft = (field: string, value: any) => {
+      if (!draftTrack) return;
+      setDraftTrack({ ...draftTrack, [field]: value });
+  };
+
+  const handleLyricsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      if (!draftTrack) return;
+      const lines = e.target.value.split('\n');
+      setDraftTrack({ ...draftTrack, lyrics: lines });
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
+    <div className="max-w-6xl mx-auto p-6">
       <div className="mb-8 flex items-center justify-between">
         <div>
-            <h2 className="text-3xl font-bold text-white mb-2">Create New Track</h2>
-            <p className="text-gray-400">Describe your vision, and WesAI will arrange the composition.</p>
+            <h2 className="text-3xl font-bold text-white mb-2">
+                {phase === 'input' ? 'Create New Track' : phase === 'drafting' ? 'Studio Editor' : 'Mastering...'}
+            </h2>
+            <p className="text-gray-400">
+                {phase === 'input' ? 'Describe your vision, and WesAI will arrange the composition.' : 'Refine your lyrics and structure before recording.'}
+            </p>
         </div>
-        <div className="hidden md:flex items-center space-x-2 px-4 py-2 bg-wes-800 rounded-full border border-wes-700">
-            <Zap className="w-4 h-4 text-yellow-500" />
-            <span className="text-xs font-mono text-gray-300">TURBO MODE ACTIVE</span>
-        </div>
+        {phase === 'input' && (
+            <div className="hidden md:flex items-center space-x-2 px-4 py-2 bg-wes-800 rounded-full border border-wes-700">
+                <Zap className="w-4 h-4 text-yellow-500" />
+                <span className="text-xs font-mono text-gray-300">TURBO MODE ACTIVE</span>
+            </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Form Section */}
-        <div className="lg:col-span-2 glass-panel p-8 rounded-2xl">
-          <form onSubmit={handleSubmit} className="space-y-6">
+        
+        {/* === LEFT PANEL: CONTROLS === */}
+        <div className="lg:col-span-2 glass-panel p-8 rounded-2xl relative overflow-hidden">
             
-            <div className="grid grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">Genre</label>
-                <select 
-                  className="w-full bg-wes-800 border border-wes-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-wes-purple focus:outline-none"
-                  value={formData.genre}
-                  onChange={(e) => setFormData({...formData, genre: e.target.value})}
-                >
-                  {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">Mood</label>
-                <select 
-                  className="w-full bg-wes-800 border border-wes-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-wes-purple focus:outline-none"
-                  value={formData.mood}
-                  onChange={(e) => setFormData({...formData, mood: e.target.value})}
-                >
-                  {MOODS.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">Vibe Description</label>
-              <textarea 
-                className="w-full bg-wes-800 border border-wes-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-wes-purple focus:outline-none h-24 resize-none"
-                placeholder="E.g., A driving beat for a late night drive through Tokyo..."
-                value={formData.description}
-                onChange={(e) => setFormData({...formData, description: e.target.value})}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">Lyrics (Optional)</label>
-              <textarea 
-                className="w-full bg-wes-800 border border-wes-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-wes-purple focus:outline-none h-32 resize-none font-mono text-sm"
-                placeholder="Paste your lyrics here, or leave empty for AI generation..."
-                value={formData.customLyrics}
-                onChange={(e) => setFormData({...formData, customLyrics: e.target.value})}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-                <div className="flex items-center space-x-3 p-4 border border-wes-700 rounded-xl bg-wes-800/30">
-                <input 
-                    type="checkbox" 
-                    id="hasVocals"
-                    className="w-5 h-5 rounded border-gray-600 text-wes-purple focus:ring-wes-purple bg-wes-800"
-                    checked={formData.hasVocals}
-                    onChange={(e) => setFormData({...formData, hasVocals: e.target.checked})}
-                />
-                <label htmlFor="hasVocals" className="text-gray-300">Include Vocals</label>
+            {phase === 'production' && (
+                <div className="absolute inset-0 z-20 bg-wes-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-center">
+                    <Loader2 className="w-16 h-16 text-wes-purple animate-spin mb-4" />
+                    <h3 className="text-2xl font-bold text-white">Producing Track...</h3>
+                    <p className="text-gray-400 mt-2">Synthesizing Vocals • Generating Artwork • Mastering Audio</p>
                 </div>
+            )}
 
-                <div className="flex flex-col justify-center">
-                    <label className="text-xs text-gray-500 mb-1 uppercase font-bold tracking-wider">Voice Profile</label>
-                    <select 
-                        className="bg-wes-800 border-none text-white text-sm focus:ring-0 cursor-pointer"
-                        value={formData.voiceName}
-                        onChange={(e) => setFormData({...formData, voiceName: e.target.value})}
-                        disabled={!formData.hasVocals}
+            {phase === 'input' ? (
+                // --- PHASE 1: INPUT FORM ---
+                <form onSubmit={handleGenerateConcept} className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-300">
+                    <div className="grid grid-cols-2 gap-6">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-400 mb-2">Genre</label>
+                            <select 
+                            className="w-full bg-wes-800 border border-wes-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-wes-purple focus:outline-none"
+                            value={formData.genre}
+                            onChange={(e) => setFormData({...formData, genre: e.target.value})}
+                            >
+                            {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-400 mb-2">Mood</label>
+                            <select 
+                            className="w-full bg-wes-800 border border-wes-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-wes-purple focus:outline-none"
+                            value={formData.mood}
+                            onChange={(e) => setFormData({...formData, mood: e.target.value})}
+                            >
+                            {MOODS.map(m => <option key={m} value={m}>{m}</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-2">Vibe Description</label>
+                    <textarea 
+                        className="w-full bg-wes-800 border border-wes-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-wes-purple focus:outline-none h-24 resize-none"
+                        placeholder="E.g., A driving beat for a late night drive through Tokyo..."
+                        value={formData.description}
+                        onChange={(e) => setFormData({...formData, description: e.target.value})}
+                        required
+                    />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="flex items-center space-x-3 p-4 border border-wes-700 rounded-xl bg-wes-800/30">
+                            <input 
+                                type="checkbox" 
+                                id="hasVocals"
+                                className="w-5 h-5 rounded border-gray-600 text-wes-purple focus:ring-wes-purple bg-wes-800"
+                                checked={formData.hasVocals}
+                                onChange={(e) => setFormData({...formData, hasVocals: e.target.checked})}
+                            />
+                            <label htmlFor="hasVocals" className="text-gray-300">Include Vocals</label>
+                        </div>
+
+                        <div className="flex flex-col justify-center">
+                            <label className="text-xs text-gray-500 mb-1 uppercase font-bold tracking-wider">Voice Profile</label>
+                            <select 
+                                className="bg-wes-800 border-none text-white text-sm focus:ring-0 cursor-pointer"
+                                value={formData.voiceName}
+                                onChange={(e) => setFormData({...formData, voiceName: e.target.value})}
+                                disabled={!formData.hasVocals}
+                            >
+                                <option value="Kore">Kore (Balanced)</option>
+                                <option value="Fenrir">Fenrir (Deep)</option>
+                                <option value="Puck">Puck (Energetic)</option>
+                                <option value="Zephyr">Zephyr (Soft)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button 
+                        type="submit" 
+                        disabled={loading}
+                        className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center space-x-2 transition-all ${
+                            loading 
+                            ? 'bg-wes-800 cursor-not-allowed text-gray-500' 
+                            : 'bg-gradient-to-r from-wes-purple to-blue-600 hover:shadow-lg hover:shadow-purple-900/40 text-white'
+                        }`}
+                        >
+                        {loading ? (
+                            <>
+                            <Loader2 className="animate-spin w-5 h-5" />
+                            <span>Brainstorming...</span>
+                            </>
+                        ) : (
+                            <>
+                            <Edit3 className="w-5 h-5" />
+                            <span>Draft Concept</span>
+                            </>
+                        )}
+                    </button>
+                </form>
+            ) : (
+                // --- PHASE 2: DRAFTING EDITOR ---
+                <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300 h-full flex flex-col">
+                    <div className="flex items-center space-x-4 border-b border-wes-700 pb-4">
+                        <div className="flex-1">
+                            <label className="text-xs text-gray-500 uppercase font-bold">Track Title</label>
+                            <input 
+                                type="text" 
+                                value={draftTrack?.title || ""} 
+                                onChange={(e) => handleUpdateDraft('title', e.target.value)}
+                                className="w-full bg-transparent text-2xl font-bold text-white focus:outline-none border-b border-transparent focus:border-wes-purple transition-colors placeholder-gray-600"
+                                placeholder="Untitled Track"
+                            />
+                        </div>
+                        <div className="text-right">
+                             <p className="text-xs text-gray-500 uppercase font-bold">BPM</p>
+                             <p className="text-xl font-mono text-wes-purple">{draftTrack?.bpm || 120}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 flex flex-col">
+                        <div className="flex justify-between items-center mb-2">
+                             <label className="text-xs text-gray-500 uppercase font-bold">Lyrics Editor</label>
+                             <button 
+                                type="button" 
+                                onClick={() => setPhase('input')}
+                                className="text-xs text-red-400 hover:underline flex items-center"
+                             >
+                                <RefreshCcw className="w-3 h-3 mr-1" /> Discard
+                             </button>
+                        </div>
+                        <textarea 
+                            className="flex-1 w-full bg-wes-800/50 border border-wes-700 text-gray-100 rounded-xl p-6 focus:ring-2 focus:ring-wes-purple focus:outline-none resize-none font-mono leading-relaxed"
+                            value={draftTrack?.lyrics?.join('\n') || ""}
+                            onChange={handleLyricsChange}
+                            placeholder="Lyrics will appear here..."
+                            style={{ minHeight: '300px' }}
+                        />
+                        <p className="text-xs text-gray-500 mt-2 text-right">Edit lines to adjust phrasing. Empty lines create pauses.</p>
+                    </div>
+
+                    <button 
+                        onClick={handleProduction}
+                        className="w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center space-x-2 bg-green-600 hover:bg-green-500 hover:shadow-lg hover:shadow-green-900/40 text-white transition-all"
                     >
-                        <option value="Kore">Kore (Balanced)</option>
-                        <option value="Fenrir">Fenrir (Deep)</option>
-                        <option value="Puck">Puck (Energetic)</option>
-                        <option value="Zephyr">Zephyr (Soft)</option>
-                    </select>
+                        <PlayCircle className="w-5 h-5" />
+                        <span>Produce Track (Finalize)</span>
+                    </button>
                 </div>
-            </div>
-
-            <button 
-              type="submit" 
-              disabled={loading}
-              className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center space-x-2 transition-all ${
-                loading 
-                  ? 'bg-wes-800 cursor-not-allowed text-gray-500' 
-                  : 'bg-gradient-to-r from-wes-purple to-blue-600 hover:shadow-lg hover:shadow-purple-900/40 text-white'
-              }`}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="animate-spin w-5 h-5" />
-                  <span>{getStepLabel()}</span>
-                </>
-              ) : (
-                <>
-                  <Wand2 className="w-5 h-5" />
-                  <span>Generate Track</span>
-                </>
-              )}
-            </button>
-          </form>
+            )}
         </div>
 
-        {/* Preview / Tips Section */}
+        {/* === RIGHT PANEL: INFO & TIPS === */}
         <div className="space-y-6">
            <div className="glass-panel p-6 rounded-2xl">
               <h3 className="text-white font-semibold mb-4 flex items-center">
                 <Music className="w-4 h-4 text-wes-purple mr-2" />
-                Pro Tips
+                {phase === 'drafting' ? 'Editor Controls' : 'Pro Tips'}
               </h3>
-              <ul className="space-y-3 text-sm text-gray-400">
-                <li className="flex items-start">
-                  <span className="text-wes-purple mr-2">•</span>
-                  Try mixing contrasting genres like "Jazz" and "Metal" for unique results.
-                </li>
-                <li className="flex items-start">
-                  <span className="text-wes-purple mr-2">•</span>
-                  Provide specific instruments in the description (e.g., "Heavy 808s and violin").
-                </li>
-                <li className="flex items-start">
-                  <span className="text-wes-purple mr-2">•</span>
-                  OneSound optimizes for "Radio Edit" length (approx 3 mins).
-                </li>
-              </ul>
+              
+              {phase === 'drafting' ? (
+                  <ul className="space-y-3 text-sm text-gray-400">
+                     <li className="flex items-start">
+                        <span className="text-wes-purple mr-2 font-bold">1.</span>
+                        Review the generated lyrics carefully.
+                     </li>
+                     <li className="flex items-start">
+                        <span className="text-wes-purple mr-2 font-bold">2.</span>
+                        Remove [Chorus] or [Verse] tags if you don't want them spoken.
+                     </li>
+                     <li className="flex items-start">
+                        <span className="text-wes-purple mr-2 font-bold">3.</span>
+                        Use punctuation to control rhythm. Commas add short pauses.
+                     </li>
+                  </ul>
+              ) : (
+                  <ul className="space-y-3 text-sm text-gray-400">
+                    <li className="flex items-start">
+                    <span className="text-wes-purple mr-2">•</span>
+                    Try mixing contrasting genres like "Jazz" and "Metal".
+                    </li>
+                    <li className="flex items-start">
+                    <span className="text-wes-purple mr-2">•</span>
+                    Specific instruments help (e.g., "Heavy 808s").
+                    </li>
+                  </ul>
+              )}
            </div>
            
            <div className="bg-gradient-to-br from-wes-800 to-wes-900 p-6 rounded-2xl border border-wes-700 text-center">
-              <p className="text-gray-500 text-sm mb-2">Available Credits</p>
-              <p className="text-3xl font-mono font-bold text-white">∞ <span className="text-sm font-normal text-gray-600">Free Tier</span></p>
+              <p className="text-gray-500 text-sm mb-2">Estimated Duration</p>
+              <p className="text-3xl font-mono font-bold text-white">
+                  {draftTrack?.duration ? `${Math.floor(draftTrack.duration / 60)}:${(draftTrack.duration % 60).toString().padStart(2, '0')}` : "~03:00"}
+              </p>
            </div>
         </div>
       </div>
