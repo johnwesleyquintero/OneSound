@@ -1,0 +1,7 @@
+{
+  "name": "OneSound",
+  "description": "A collaborative AI Music Studio partner that helps you remaster audio and create original compositions with lyrics and art generation.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
