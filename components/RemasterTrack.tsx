@@ -12,6 +12,9 @@ export const RemasterTrack: React.FC = () => {
   const [analysis, setAnalysis] = useState<AudioAnalysis | null>(null);
   const [selectedStyle, setSelectedStyle] = useState<string>("");
   
+  // New state for vibe preservation
+  const [intensity, setIntensity] = useState<number>(0.8);
+  
   const [progress, setProgress] = useState(0);
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
@@ -67,14 +70,19 @@ export const RemasterTrack: React.FC = () => {
   };
 
   const getFilterConfig = (style: string): AudioFilterConfig => {
-    switch (style) {
-      case "Modern Clarity (AI Clean)": return { lowGain: -2, midGain: 2, highGain: 6 };
-      case "Vintage Tape Saturation": return { lowGain: 3, midGain: -2, highGain: -5 };
-      case "Warm Tube Amp": return { lowGain: 5, midGain: 3, highGain: -2 };
-      case "Bass Boosted & Punchy": return { lowGain: 12, midGain: -1, highGain: 2 };
-      case "Vocal Isolation": return { lowGain: -20, midGain: 10, highGain: -5 };
-      default: return { lowGain: 0, midGain: 0, highGain: 0 };
-    }
+    const baseConfig = (() => {
+        switch (style) {
+            case "Modern Clarity (AI Clean)": return { lowGain: -2, midGain: 2, highGain: 6 };
+            case "Vintage Tape Saturation": return { lowGain: 3, midGain: -2, highGain: -5 };
+            case "Warm Tube Amp": return { lowGain: 5, midGain: 3, highGain: -2 };
+            case "Bass Boosted & Punchy": return { lowGain: 12, midGain: -1, highGain: 2 };
+            case "Vocal Isolation": return { lowGain: -20, midGain: 10, highGain: -5 };
+            default: return { lowGain: 0, midGain: 0, highGain: 0 };
+        }
+    })();
+    
+    // Mix preserves original vibe by blending dry signal
+    return { ...baseConfig, mix: intensity };
   };
 
   const handleRemaster = async (style: string) => {
@@ -150,8 +158,8 @@ export const RemasterTrack: React.FC = () => {
   return (
     <div className="max-w-4xl mx-auto p-6 h-full flex flex-col items-center justify-center min-h-[60vh]">
       <div className="text-center mb-10">
-        <h2 className="text-3xl font-bold text-white mb-2">AI Remastering Studio</h2>
-        <p className="text-gray-400">Restore old recordings using our browser-based Neural DSP engine.</p>
+        <h2 className="text-3xl font-bold text-white mb-2">Track Remastering</h2>
+        <p className="text-gray-400">Preserve original vibe while improving clarity using Neural DSP.</p>
       </div>
 
       <div className="w-full max-w-2xl bg-wes-800/30 border border-dashed border-wes-600 rounded-3xl p-12 text-center transition-all hover:bg-wes-800/50 hover:border-wes-purple group relative overflow-hidden">
@@ -161,7 +169,7 @@ export const RemasterTrack: React.FC = () => {
             <div className="w-20 h-20 bg-wes-700/50 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
               <Upload className="w-10 h-10 text-gray-400 group-hover:text-wes-purple" />
             </div>
-            <h3 className="text-xl font-semibold text-white mb-2">Drop your audio file here</h3>
+            <h3 className="text-xl font-semibold text-white mb-2">Drop your old audio here</h3>
             <p className="text-gray-500 mb-6">Supports MP3, WAV, FLAC (Max 50MB)</p>
             <label className="bg-white text-black px-6 py-3 rounded-full font-bold cursor-pointer hover:bg-gray-200 transition">
               Browse Files
@@ -173,7 +181,7 @@ export const RemasterTrack: React.FC = () => {
              {/* Header */}
              <div className="flex items-center justify-center space-x-4">
                 <div className="w-12 h-12 bg-wes-purple/20 rounded-lg flex items-center justify-center">
-                    <MusicIcon />
+                    <Activity className="w-6 h-6 text-wes-purple" />
                 </div>
                 <div className="text-left">
                     <p className="text-white font-medium">{file.name}</p>
@@ -223,7 +231,25 @@ export const RemasterTrack: React.FC = () => {
              )}
 
              {!processing && !analyzing && (
-                 <>
+                 <> 
+                    {/* Intensity Slider for Vibe Preservation */}
+                    <div className="bg-wes-900/50 p-4 rounded-xl border border-wes-700">
+                        <div className="flex justify-between items-center mb-2">
+                             <label className="text-xs text-gray-400 uppercase font-bold">Effect Intensity</label>
+                             <span className="text-xs font-mono text-wes-purple">{Math.round(intensity * 100)}%</span>
+                        </div>
+                        <input 
+                            type="range" 
+                            min="0" 
+                            max="1" 
+                            step="0.1" 
+                            value={intensity}
+                            onChange={(e) => setIntensity(parseFloat(e.target.value))}
+                            className="w-full h-2 bg-wes-700 rounded-lg appearance-none cursor-pointer accent-wes-purple"
+                        />
+                        <p className="text-[10px] text-gray-500 mt-2 text-center">Lower intensity preserves more of the original recording's character.</p>
+                    </div>
+
                     <p className="text-sm text-gray-400 uppercase tracking-widest font-bold">Processing Chain</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
                         {REMASTER_STYLES.map((style) => {
@@ -330,7 +356,3 @@ export const RemasterTrack: React.FC = () => {
     </div>
   );
 };
-
-const MusicIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-wes-purple"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-);

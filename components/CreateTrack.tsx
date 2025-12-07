@@ -4,7 +4,7 @@ import { GenerationParams, Song } from '../types';
 import { generateSongConcept, generateCoverArt, generateVocals, refineLyrics } from '../services/geminiService';
 import { supabase } from '../services/supabaseClient';
 import { base64ToUint8Array, createWavBlob, generateProceduralBackingTrack, mixAudioTracks, bufferToWav } from '../utils/audioHelpers';
-import { Wand2, Music, Loader2, Zap, Edit3, Save, PlayCircle, RefreshCcw, Coffee, CassetteTape, Sword, Mountain, Sparkles, Users, Hammer } from 'lucide-react';
+import { Wand2, Music, Loader2, Zap, Edit3, Save, PlayCircle, RefreshCcw, Coffee, CassetteTape, Sword, Mountain, Sparkles, Users, Hammer, Mic, Speaker, Guitar } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
 interface CreateTrackProps {
@@ -13,40 +13,58 @@ interface CreateTrackProps {
 
 const TEMPLATES = [
   { 
+    id: 'nostalgia', 
+    label: 'Nostalgia Mode', 
+    icon: CassetteTape, 
+    genre: 'Cyberpunk Synthwave', 
+    mood: 'Euphoric', 
+    voice: 'Kore',
+    description: 'Old school tracks, neon soaked streets, analog synthesizers, gated reverb drums, late night drive vibes.' 
+  },
+  { 
+    id: 'ost', 
+    label: 'OST Mode', 
+    icon: Sword, 
+    genre: 'Indie Pop', 
+    mood: 'Energetic', 
+    voice: 'Puck',
+    description: 'Anime opening theme, driving guitar riffs, emotional build up, power of friendship, game soundtrack.' 
+  },
+  { 
+    id: 'acoustic', 
+    label: 'Acoustic', 
+    icon: Guitar, 
+    genre: 'Acoustic Folk', 
+    mood: 'Melancholic', 
+    voice: 'Zephyr',
+    description: 'Stripped back acoustic guitar, raw vocals, coffee shop atmosphere, intimate and emotional.' 
+  },
+  { 
     id: 'lofi', 
     label: 'Lo-Fi Study', 
     icon: Coffee, 
     genre: 'Lo-Fi Hip Hop', 
     mood: 'Chill', 
     voice: 'Zephyr',
-    description: 'Dusty vinyl crackle, mellow jazz piano chords, soft boom bap beat, raining outside atmosphere.' 
+    description: 'Dusty vinyl crackle, mellow jazz piano chords, soft boom bap beat, raining outside.' 
   },
   { 
-    id: 'nostalgia', 
-    label: '80s Nostalgia', 
-    icon: CassetteTape, 
-    genre: 'Cyberpunk Synthwave', 
-    mood: 'Euphoric', 
-    voice: 'Kore',
-    description: 'Neon soaked streets, analog synthesizers, gated reverb drums, late night drive vibes, retro future.' 
-  },
-  { 
-    id: 'ost', 
-    label: 'Anime OST', 
-    icon: Sword, 
-    genre: 'Indie Pop', 
+    id: 'edm', 
+    label: 'EDM / Trap', 
+    icon: Speaker, 
+    genre: 'Trap / Drill', 
     mood: 'Energetic', 
-    voice: 'Puck',
-    description: 'High energy opening theme for a shonen anime, driving guitar riffs, emotional build up, power of friendship.' 
+    voice: 'Fenrir',
+    description: 'Mainstage festival energy, heavy bass drops, rapid hi-hats, massive supersaw synths.' 
   },
   { 
-    id: 'cinematic', 
-    label: 'Cinematic', 
+    id: 'orchestral', 
+    label: 'Orchestral', 
     icon: Mountain, 
     genre: 'Orchestral Cinematic', 
     mood: 'Focus', 
     voice: 'Fenrir',
-    description: 'Hans Zimmer style crescendo, massive string section, thunderous percussion, epic choir, wide soundstage.' 
+    description: 'Hans Zimmer style crescendo, massive string section, thunderous percussion, epic choir.' 
   }
 ];
 
@@ -329,10 +347,10 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
       <div className="mb-8 flex items-center justify-between">
         <div>
             <h2 className="text-3xl font-bold text-white mb-2">
-                {phase === 'input' ? 'Create New Track' : phase === 'drafting' ? 'Studio Editor' : 'Mastering...'}
+                {phase === 'input' ? 'Original Music Creation' : phase === 'drafting' ? 'Studio Editor' : 'Mastering...'}
             </h2>
             <p className="text-gray-400">
-                {phase === 'input' ? 'Describe your vision, and WesAI will arrange the composition.' : 'Refine your lyrics and structure before recording.'}
+                {phase === 'input' ? 'Choose a style and input your vision. WesAI will arrange the composition.' : 'Refine your lyrics and structure before recording.'}
             </p>
         </div>
         {phase === 'input' && (
@@ -362,20 +380,20 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                     
                     {/* Templates Section */}
                     <div>
-                      <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 block">Quick Start Templates</label>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 block">Preset Styles</label>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                         {TEMPLATES.map((t) => (
                           <button
                             key={t.id}
                             type="button"
                             onClick={() => applyTemplate(t)}
-                            className={`p-3 rounded-xl border transition-all duration-200 flex flex-col items-center text-center space-y-2 hover:scale-105 ${
+                            className={`p-4 rounded-xl border transition-all duration-200 flex flex-col items-center text-center space-y-2 hover:scale-105 ${
                               formData.description === t.description 
-                                ? 'bg-wes-purple/20 border-wes-purple text-white' 
+                                ? 'bg-wes-purple/20 border-wes-purple text-white shadow-lg shadow-purple-900/30' 
                                 : 'bg-wes-800 border-wes-700 text-gray-400 hover:bg-wes-800/80 hover:text-white'
                             }`}
                           >
-                             <t.icon className="w-6 h-6" />
+                             <t.icon className={`w-6 h-6 ${formData.description === t.description ? 'text-wes-purple' : ''}`} />
                              <span className="text-xs font-bold">{t.label}</span>
                           </button>
                         ))}
@@ -408,11 +426,11 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                     </div>
 
                     <div>
-                    <label className="block text-sm font-medium text-gray-400 mb-2">Vibe Description</label>
+                    <label className="block text-sm font-medium text-gray-400 mb-2">Vibe Description & Lyrics Topic</label>
                     <div className="relative">
                       <textarea 
                           className="w-full bg-wes-800 border border-wes-700 text-white rounded-lg px-4 py-3 pr-10 focus:ring-2 focus:ring-wes-purple focus:outline-none h-24 resize-none"
-                          placeholder="E.g., A driving beat for a late night drive through Tokyo..."
+                          placeholder="Describe the sound, instruments, and lyrical theme..."
                           value={formData.description}
                           onChange={(e) => setFormData({...formData, description: e.target.value})}
                           required
@@ -492,12 +510,12 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                         {loading ? (
                             <>
                             <Loader2 className="animate-spin w-5 h-5" />
-                            <span>Brainstorming...</span>
+                            <span>Composing Track...</span>
                             </>
                         ) : (
                             <>
                             <Edit3 className="w-5 h-5" />
-                            <span>Draft Concept</span>
+                            <span>Create Original Music</span>
                             </>
                         )}
                     </button>
@@ -647,15 +665,15 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                   <ul className="space-y-3 text-sm text-gray-400">
                     <li className="flex items-start">
                     <span className="text-wes-purple mr-2">•</span>
-                    Use the Templates to get engineered prompts.
+                    Use <strong>Preset Styles</strong> (Nostalgia, OST, etc.) to instantly load tuned prompts.
                     </li>
                     <li className="flex items-start">
                     <span className="text-wes-purple mr-2">•</span>
-                    Enable <strong>Duet Mode</strong> to create dynamic conversations between two AI voices.
+                    Enable <strong>Duet Mode</strong> for dynamic conversations.
                     </li>
                      <li className="flex items-start">
                     <span className="text-wes-purple mr-2">•</span>
-                    Try mixing contrasting genres like "Jazz" and "Metal".
+                    The AI produces full arrangements based on the mood.
                     </li>
                   </ul>
               )}

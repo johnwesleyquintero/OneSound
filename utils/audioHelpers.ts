@@ -99,6 +99,7 @@ export interface AudioFilterConfig {
   midGain?: number; // Mids
   highGain?: number; // Treble
   saturation?: boolean;
+  mix?: number; // 0.0 to 1.0 (Dry to Wet)
 }
 
 export const processAudio = async (
@@ -118,6 +119,17 @@ export const processAudio = async (
 
   const source = offlineCtx.createBufferSource();
   source.buffer = audioBuffer;
+
+  // Wet/Dry Mix Architecture
+  const dryGain = offlineCtx.createGain();
+  const wetGain = offlineCtx.createGain();
+  const masterMerge = offlineCtx.createGain();
+
+  // Mix Value (Default to 1.0/Full Wet if undefined)
+  const mix = config.mix !== undefined ? config.mix : 1.0;
+  
+  dryGain.gain.value = 1.0 - mix;
+  wetGain.gain.value = mix;
 
   // Create Filter Chain
   const lowShelf = offlineCtx.createBiquadFilter();
@@ -144,12 +156,21 @@ export const processAudio = async (
   compressor.attack.value = 0.003;
   compressor.release.value = 0.25;
 
-  // Wiring: Source -> Low -> Mid -> High -> Compressor -> Destination
+  // Wiring: 
+  // Source -> DryGain -> Master
+  // Source -> Filters -> Compressor -> WetGain -> Master
+  
+  source.connect(dryGain);
+  dryGain.connect(masterMerge);
+
   source.connect(lowShelf);
   lowShelf.connect(midPeaking);
   midPeaking.connect(highShelf);
   highShelf.connect(compressor);
-  compressor.connect(offlineCtx.destination);
+  compressor.connect(wetGain);
+  wetGain.connect(masterMerge);
+
+  masterMerge.connect(offlineCtx.destination);
 
   source.start(0);
 
@@ -240,23 +261,25 @@ export const generateProceduralBackingTrack = async (
 
     // --- RHYTHM SECTION (Drums) ---
     // Simple Kick/Snare pattern based on genre
-    const kickInterval = genre.includes('Metal') || genre.includes('Drum') ? secondsPerBeat / 2 : secondsPerBeat;
+    const kickInterval = genre.includes('Metal') || genre.includes('Drum') || genre.includes('Drill') ? secondsPerBeat / 2 : secondsPerBeat;
     
     for (let time = 0; time < totalDuration; time += kickInterval) {
         // Kick
-        const osc = offlineCtx.createOscillator();
-        const gain = offlineCtx.createGain();
-        osc.frequency.setValueAtTime(150, time);
-        osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.5);
-        gain.gain.setValueAtTime(0.8, time);
-        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.5);
-        osc.connect(gain);
-        gain.connect(masterGain);
-        osc.start(time);
-        osc.stop(time + 0.5);
+        if (!genre.includes('Ambient')) {
+            const osc = offlineCtx.createOscillator();
+            const gain = offlineCtx.createGain();
+            osc.frequency.setValueAtTime(150, time);
+            osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.5);
+            gain.gain.setValueAtTime(0.8, time);
+            gain.gain.exponentialRampToValueAtTime(0.01, time + 0.5);
+            osc.connect(gain);
+            gain.connect(masterGain);
+            osc.start(time);
+            osc.stop(time + 0.5);
+        }
 
         // Hi-Hat (every half beat)
-        if (genre !== 'Ambient Soundscape') {
+        if (genre !== 'Ambient Soundscape' && genre !== 'Acoustic') {
             const noise = offlineCtx.createBufferSource();
             const noiseBuffer = offlineCtx.createBuffer(1, sampleRate * 0.05, sampleRate);
             const output = noiseBuffer.getChannelData(0);
@@ -302,6 +325,12 @@ export const generateProceduralBackingTrack = async (
             } else if (genre.includes('Lo-Fi')) {
                 osc.type = 'sine';
                 gain.gain.value = 0.15;
+            } else if (genre.includes('EDM') || genre.includes('Trap')) {
+                 osc.type = 'sawtooth';
+                 gain.gain.value = 0.08;
+            } else if (genre.includes('Acoustic')) {
+                 osc.type = 'triangle'; // Closer to a flute/soft string
+                 gain.gain.value = 0.1;
             } else {
                 osc.type = 'triangle';
                 gain.gain.value = 0.08;
@@ -317,7 +346,7 @@ export const generateProceduralBackingTrack = async (
             // Simple LPF for smoother sound
             const lpf = offlineCtx.createBiquadFilter();
             lpf.type = 'lowpass';
-            lpf.frequency.value = 1000;
+            lpf.frequency.value = genre.includes('Acoustic') ? 800 : 2000;
             
             // Pan separation
             const panner = offlineCtx.createStereoPanner();
