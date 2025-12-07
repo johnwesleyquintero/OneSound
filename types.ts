@@ -8,6 +8,7 @@ export interface Song {
   coverArtUrl?: string; // Base64
   audioUrl?: string; // Blob URL for the generated audio (Full Mix)
   backingUrl?: string; // Blob URL for the instrumental
+  videoUrl?: string; // Blob URL for the generated video
   duration: number; // in seconds
   createdAt: Date;
   status: 'concept' | 'generating' | 'ready' | 'failed';

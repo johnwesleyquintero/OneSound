@@ -18,12 +18,20 @@ const MainApp = ({ user, logout }: { user: UserProfile, logout: () => void }) =>
     const { addToast } = useToast();
 
     // Use custom hook for library management
-    const { history, addTrack, deleteTrack } = useLibrary(user);
+    const { history, addTrack, updateTrack, deleteTrack } = useLibrary(user);
 
     const handleTrackCreated = (track: Song) => {
         addTrack(track);
         setCurrentTrack(track);
         setCurrentView(AppView.LIBRARY); 
+    };
+
+    const handleUpdateTrack = (trackId: string, updates: Partial<Song>) => {
+        updateTrack(trackId, updates);
+        // Also update current track if it's the one being modified
+        if (currentTrack?.id === trackId) {
+            setCurrentTrack(prev => prev ? { ...prev, ...updates } : null);
+        }
     };
 
     const playTrack = (track: Song) => {
@@ -103,7 +111,7 @@ const MainApp = ({ user, logout }: { user: UserProfile, logout: () => void }) =>
                     {history.map((song, index) => (
                         <div 
                             key={song.id} 
-                            className={`grid grid-cols-12 gap-4 p-4 items-center hover:bg-wes-800/50 transition group ${currentTrack?.id === song.id ? 'bg-wes-800/80' : ''}`}
+                            className={`grid grid-cols-12 gap-4 p-4 items-center hover:bg-wes-800/50 transition group cursor-pointer ${currentTrack?.id === song.id ? 'bg-wes-800/80' : ''}`}
                             onClick={() => playTrack(song)}
                         >
                             <div className="col-span-1 text-center text-gray-500 group-hover:text-white">
@@ -154,7 +162,7 @@ const MainApp = ({ user, logout }: { user: UserProfile, logout: () => void }) =>
             </div>
             </main>
 
-            <Player currentTrack={currentTrack} />
+            <Player currentTrack={currentTrack} onUpdateTrack={handleUpdateTrack} />
         </div>
     );
 };

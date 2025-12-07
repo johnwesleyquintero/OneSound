@@ -27,7 +27,8 @@ export const useLibrary = (user: UserProfile | null) => {
         lyrics: t.lyrics,
         coverArtUrl: t.cover_art_url,
         audioUrl: t.audio_url,
-        backingUrl: t.backing_url, // Ensure backing_url is mapped
+        backingUrl: t.backing_url,
+        videoUrl: t.video_url, // Map video url
         duration: t.duration,
         createdAt: new Date(t.created_at),
         status: t.status,
@@ -35,7 +36,7 @@ export const useLibrary = (user: UserProfile | null) => {
         instruments: t.instruments,
         type: t.type,
         description: t.description,
-        isDuet: t.is_duet, // Ensure duet flags are mapped if column exists
+        isDuet: t.is_duet,
         secondaryVoiceName: t.secondary_voice_name
       }));
       setHistory(mappedSongs);
@@ -51,11 +52,14 @@ export const useLibrary = (user: UserProfile | null) => {
       setHistory(prev => [track, ...prev]);
   };
 
+  const updateTrack = (trackId: string, updates: Partial<Song>) => {
+      setHistory(prev => prev.map(t => t.id === trackId ? { ...t, ...updates } : t));
+  };
+
   const deleteTrack = async (trackId: string): Promise<boolean> => {
     try {
-        // 1. Attempt to clean up storage (Audio, Instrumental, Cover)
-        // We use "best effort" here - if files don't exist, we continue to delete the row.
-        await supabase.storage.from('audio').remove([`${trackId}.wav`, `${trackId}_inst.wav`]);
+        // 1. Attempt to clean up storage (Audio, Instrumental, Cover, Video)
+        await supabase.storage.from('audio').remove([`${trackId}.wav`, `${trackId}_inst.wav`, `${trackId}_video.mp4`]);
         await supabase.storage.from('covers').remove([`${trackId}.png`]);
 
         // 2. Delete the database record
@@ -75,5 +79,5 @@ export const useLibrary = (user: UserProfile | null) => {
     }
   };
 
-  return { history, loading, refreshLibrary: fetchTracks, addTrack, deleteTrack };
+  return { history, loading, refreshLibrary: fetchTracks, addTrack, updateTrack, deleteTrack };
 };

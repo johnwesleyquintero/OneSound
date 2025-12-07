@@ -312,3 +312,65 @@ export const analyzeAudioTrack = async (audioBase64: string): Promise<AudioAnaly
     };
   }
 };
+
+export const generateMusicVideo = async (song: Song): Promise<string> => {
+    // 1. API Key Check for Veo
+    if ((window as any).aistudio) {
+        const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+        if (!hasKey) {
+             try {
+                const success = await (window as any).aistudio.openSelectKey();
+                if (!success) throw new Error("API Key selection cancelled.");
+             } catch (e) {
+                 throw new Error("Please select a paid API key to use Veo video generation.");
+             }
+        }
+    }
+
+    // 2. Re-initialize client to pick up potentially new key
+    const ai = getClient();
+    
+    const prompt = `
+        Cinematic music video scene for a song titled "${song.title}".
+        Genre: ${song.genre}.
+        Visual Vibe: ${song.description}.
+        Atmosphere: ${song.mood}.
+        High quality, 4k, photorealistic, trending on artstation, cinematic lighting, slow motion.
+        No text.
+    `;
+
+    console.log("Generating video with prompt:", prompt);
+
+    try {
+        let operation = await ai.models.generateVideos({
+            model: 'veo-3.1-fast-generate-preview',
+            prompt: prompt,
+            config: {
+                numberOfVideos: 1,
+                resolution: '720p',
+                aspectRatio: '16:9'
+            }
+        });
+
+        // Poll for completion
+        while (!operation.done) {
+            await new Promise(resolve => setTimeout(resolve, 5000)); // Poll every 5s
+            operation = await ai.operations.getVideosOperation({operation: operation});
+            console.log("Video generation status:", operation.metadata);
+        }
+
+        const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+        if (!downloadLink) throw new Error("No video URI returned.");
+
+        // Fetch the bytes (requires key)
+        const response = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
+        if (!response.ok) throw new Error(`Failed to download video: ${response.statusText}`);
+        
+        const blob = await response.blob();
+        return URL.createObjectURL(blob);
+
+    } catch (error) {
+        console.error("Veo Video Generation Error:", error);
+        throw error;
+    }
+};
