@@ -1,8 +1,9 @@
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Song } from '../types';
-import { Play, Pause, SkipBack, SkipForward, Mic2, ChevronDown, Users, Clapperboard, Loader2 } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Mic2, ChevronDown, Users, Clapperboard, Loader2, MoreHorizontal, Download } from 'lucide-react';
 import { Visualizer } from './Visualizer';
+import { useToast } from '../context/ToastContext';
 
 interface FullScreenPlayerProps {
   currentTrack: Song;
@@ -34,6 +35,8 @@ export const FullScreenPlayer: React.FC<FullScreenPlayerProps> = ({
   onGenerateVideo
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [showDownloads, setShowDownloads] = useState(false);
+  const { addToast } = useToast();
 
   // Sync Video with Audio Play/Pause state from parent
   useEffect(() => {
@@ -42,6 +45,21 @@ export const FullScreenPlayer: React.FC<FullScreenPlayerProps> = ({
         else videoRef.current.pause();
     }
   }, [isPlaying]);
+
+  const downloadAsset = (url: string | undefined, filename: string) => {
+      if (!url) {
+          addToast("Asset not available.", "error");
+          return;
+      }
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setShowDownloads(false);
+      addToast(`Downloading ${filename}...`, "success");
+  };
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-black text-white overflow-hidden animate-in slide-in-from-bottom duration-500">
@@ -71,9 +89,44 @@ export const FullScreenPlayer: React.FC<FullScreenPlayerProps> = ({
                 <span className="text-xs font-bold tracking-widest text-gray-400 uppercase">Playing from OneSound</span>
                 <span className="font-semibold text-sm">{currentTrack.genre} Station</span>
             </div>
-            <button className="p-2 hover:bg-white/10 rounded-full transition">
-                <MoreHorizontalIcon />
-            </button>
+            
+            {/* Download Menu */}
+            <div className="relative">
+                <button 
+                    onClick={() => setShowDownloads(!showDownloads)}
+                    className="p-2 hover:bg-white/10 rounded-full transition"
+                >
+                    <Download className="w-6 h-6 text-gray-300" />
+                </button>
+                
+                {showDownloads && (
+                    <div className="absolute right-0 top-12 w-48 bg-wes-900 border border-wes-700 rounded-xl shadow-2xl p-2 flex flex-col space-y-1 animate-in fade-in slide-in-from-top-2 z-50">
+                        <button 
+                            onClick={() => downloadAsset(currentTrack.audioUrl, `${currentTrack.title}_FullMix.wav`)}
+                            className="text-left px-4 py-2 hover:bg-wes-800 rounded-lg text-sm text-white"
+                        >
+                            Download Full Mix
+                        </button>
+                        <button 
+                            onClick={() => downloadAsset(currentTrack.backingUrl, `${currentTrack.title}_Instrumental.wav`)}
+                            disabled={!currentTrack.backingUrl}
+                            className={`text-left px-4 py-2 hover:bg-wes-800 rounded-lg text-sm ${currentTrack.backingUrl ? 'text-gray-300' : 'text-gray-600 cursor-not-allowed'}`}
+                        >
+                            Instrumental Only
+                        </button>
+                        {/* Note: Vocals aren't stored as a separate URL in the main Song type yet, so we just have Inst and Full for now unless mixed live. 
+                            However, usually users want the instrumental stem most. 
+                        */}
+                         <button 
+                            onClick={() => downloadAsset(currentTrack.videoUrl, `${currentTrack.title}_Video.mp4`)}
+                            disabled={!currentTrack.videoUrl}
+                            className={`text-left px-4 py-2 hover:bg-wes-800 rounded-lg text-sm ${currentTrack.videoUrl ? 'text-gray-300' : 'text-gray-600 cursor-not-allowed'}`}
+                        >
+                            Download Video
+                        </button>
+                    </div>
+                )}
+            </div>
         </div>
 
         {/* Content Grid */}
@@ -209,7 +262,3 @@ export const FullScreenPlayer: React.FC<FullScreenPlayerProps> = ({
     </div>
   );
 };
-
-const MoreHorizontalIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
-);

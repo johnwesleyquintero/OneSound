@@ -1,5 +1,6 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, CheckCircle2, Play, Download, RefreshCw, Loader2, Ear, Rewind, RotateCcw, BrainCircuit, Activity, Pause, SlidersHorizontal, Zap } from 'lucide-react';
+import { Upload, CheckCircle2, Play, Download, RefreshCw, Loader2, Ear, Rewind, RotateCcw, BrainCircuit, Activity, Pause, SlidersHorizontal, Zap, Waves, MicOff } from 'lucide-react';
 import { REMASTER_STYLES } from '../constants';
 import { useToast } from '../context/ToastContext';
 import { processAudio, AudioFilterConfig, getAudioSnippet } from '../utils/audioHelpers';
@@ -19,7 +20,9 @@ export const RemasterTrack: React.FC = () => {
       midGain: 0,
       highGain: 0,
       mix: 1.0,
-      saturation: false
+      saturation: false,
+      spatialMix: 0,
+      noiseGate: false
   });
   
   const [progress, setProgress] = useState(0);
@@ -100,7 +103,7 @@ export const RemasterTrack: React.FC = () => {
       setAnalysis(null);
       setCompareMode('remastered');
       setIsPlaying(false);
-      setEqSettings({ lowGain: 0, midGain: 0, highGain: 0, mix: 1.0, saturation: false });
+      setEqSettings({ lowGain: 0, midGain: 0, highGain: 0, mix: 1.0, saturation: false, spatialMix: 0, noiseGate: false });
       
       // Auto-Analyze on upload
       await runAnalysis(selectedFile);
@@ -131,11 +134,11 @@ export const RemasterTrack: React.FC = () => {
 
   const getPresetConfig = (style: string): AudioFilterConfig => {
     switch (style) {
-        case "Modern Clarity (AI Clean)": return { lowGain: -2, midGain: 3, highGain: 5, mix: 0.9, saturation: false };
-        case "Vintage Tape Saturation": return { lowGain: 4, midGain: -2, highGain: -4, mix: 0.8, saturation: true };
-        case "Warm Tube Amp": return { lowGain: 6, midGain: 2, highGain: -2, mix: 0.85, saturation: true };
-        case "Bass Boosted & Punchy": return { lowGain: 10, midGain: -2, highGain: 3, mix: 1.0, saturation: false };
-        case "Vocal Isolation": return { lowGain: -20, midGain: 12, highGain: -5, mix: 1.0, saturation: false };
+        case "Modern Clarity (AI Clean)": return { lowGain: -2, midGain: 3, highGain: 5, mix: 0.9, saturation: false, spatialMix: 0.1, noiseGate: true };
+        case "Vintage Tape Saturation": return { lowGain: 4, midGain: -2, highGain: -4, mix: 0.8, saturation: true, spatialMix: 0, noiseGate: false };
+        case "Warm Tube Amp": return { lowGain: 6, midGain: 2, highGain: -2, mix: 0.85, saturation: true, spatialMix: 0.2, noiseGate: false };
+        case "Bass Boosted & Punchy": return { lowGain: 10, midGain: -2, highGain: 3, mix: 1.0, saturation: false, spatialMix: 0, noiseGate: true };
+        case "Vocal Isolation": return { lowGain: -20, midGain: 12, highGain: -5, mix: 1.0, saturation: false, spatialMix: 0, noiseGate: true };
         default: return { lowGain: 0, midGain: 0, highGain: 0, mix: 1.0, saturation: false };
     }
   };
@@ -239,7 +242,7 @@ export const RemasterTrack: React.FC = () => {
       setOriginalUrl(null);
       setAnalysis(null);
       setIsPlaying(false);
-      setEqSettings({ lowGain: 0, midGain: 0, highGain: 0, mix: 1.0, saturation: false });
+      setEqSettings({ lowGain: 0, midGain: 0, highGain: 0, mix: 1.0, saturation: false, spatialMix: 0, noiseGate: false });
   };
 
   const Knob = ({ label, value, min, max, onChange, color = "text-wes-purple" }: any) => (
@@ -249,7 +252,7 @@ export const RemasterTrack: React.FC = () => {
                   type="range" 
                   min={min} 
                   max={max} 
-                  step={0.5}
+                  step={0.1}
                   value={value}
                   onChange={(e) => onChange(parseFloat(e.target.value))}
                   onMouseUp={commitManualChanges}
@@ -264,7 +267,9 @@ export const RemasterTrack: React.FC = () => {
               ></div>
           </div>
           <span className="text-[10px] font-bold text-gray-500 mt-2 uppercase tracking-wider">{label}</span>
-          <span className={`text-xs font-mono font-bold ${color}`}>{value > 0 ? `+${value}` : value}dB</span>
+          <span className={`text-xs font-mono font-bold ${color}`}>
+            {value.toFixed(1)}{label === 'Spatial' ? '' : 'dB'}
+          </span>
       </div>
   );
 
@@ -462,59 +467,103 @@ export const RemasterTrack: React.FC = () => {
                 />
             </div>
 
-            {/* EQ Console */}
-            <div className="bg-wes-900/50 border border-wes-800 rounded-2xl p-6 relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-wes-purple/50 to-transparent"></div>
-                <div className="flex items-center space-x-2 mb-6">
-                    <SlidersHorizontal className="w-5 h-5 text-wes-purple" />
-                    <h3 className="text-white font-bold uppercase tracking-wider text-sm">Parametric EQ & Dynamics</h3>
-                </div>
+            {/* EQ & Dynamics Console */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 
-                <div className={`grid grid-cols-4 gap-8 ${!file || processing ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
-                    <Knob 
-                        label="Low" 
-                        min={-12} 
-                        max={12} 
-                        value={eqSettings.lowGain} 
-                        onChange={(v: number) => handleManualAdjustment('lowGain', v)} 
-                    />
-                    <Knob 
-                        label="Mid" 
-                        min={-12} 
-                        max={12} 
-                        value={eqSettings.midGain} 
-                        onChange={(v: number) => handleManualAdjustment('midGain', v)} 
-                    />
-                    <Knob 
-                        label="High" 
-                        min={-12} 
-                        max={12} 
-                        value={eqSettings.highGain} 
-                        onChange={(v: number) => handleManualAdjustment('highGain', v)} 
-                    />
+                {/* EQ Section */}
+                <div className="bg-wes-900/50 border border-wes-800 rounded-2xl p-6 relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500/50 to-transparent"></div>
+                    <div className="flex items-center space-x-2 mb-6">
+                        <SlidersHorizontal className="w-5 h-5 text-blue-500" />
+                        <h3 className="text-white font-bold uppercase tracking-wider text-sm">Parametric EQ</h3>
+                    </div>
                     
-                    {/* Saturation Toggle/Knob */}
-                    <div className="flex flex-col items-center justify-end h-full pb-1">
-                        <button 
-                            onClick={() => {
-                                const newVal = !eqSettings.saturation;
-                                handleManualAdjustment('saturation', newVal);
-                                setTimeout(commitManualChanges, 100);
-                            }}
-                            className={`w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all mb-2 ${
-                                eqSettings.saturation 
-                                ? 'border-red-500 bg-red-500/20 text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' 
-                                : 'border-gray-600 bg-wes-800 text-gray-500 hover:border-gray-400'
-                            }`}
-                        >
-                            <Zap size={20} fill={eqSettings.saturation ? "currentColor" : "none"} />
-                        </button>
-                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Drive</span>
-                        <span className={`text-xs font-mono font-bold ${eqSettings.saturation ? 'text-red-500' : 'text-gray-600'}`}>
-                            {eqSettings.saturation ? 'ON' : 'OFF'}
-                        </span>
+                    <div className={`grid grid-cols-3 gap-4 ${!file || processing ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
+                        <Knob 
+                            label="Low" 
+                            min={-12} 
+                            max={12} 
+                            value={eqSettings.lowGain} 
+                            onChange={(v: number) => handleManualAdjustment('lowGain', v)} 
+                        />
+                        <Knob 
+                            label="Mid" 
+                            min={-12} 
+                            max={12} 
+                            value={eqSettings.midGain} 
+                            onChange={(v: number) => handleManualAdjustment('midGain', v)} 
+                        />
+                        <Knob 
+                            label="High" 
+                            min={-12} 
+                            max={12} 
+                            value={eqSettings.highGain} 
+                            onChange={(v: number) => handleManualAdjustment('highGain', v)} 
+                        />
                     </div>
                 </div>
+
+                {/* Spatial & Dynamics Section */}
+                <div className="bg-wes-900/50 border border-wes-800 rounded-2xl p-6 relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-wes-purple/50 to-transparent"></div>
+                    <div className="flex items-center space-x-2 mb-6">
+                        <Waves className="w-5 h-5 text-wes-purple" />
+                        <h3 className="text-white font-bold uppercase tracking-wider text-sm">Spatial & Dynamics</h3>
+                    </div>
+                    
+                    <div className={`grid grid-cols-3 gap-4 ${!file || processing ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
+                        
+                        {/* Spatial Width Knob */}
+                        <Knob 
+                            label="Spatial" 
+                            min={0} 
+                            max={1} 
+                            value={eqSettings.spatialMix || 0} 
+                            onChange={(v: number) => handleManualAdjustment('spatialMix', v)} 
+                            color="text-indigo-400"
+                        />
+
+                        {/* Saturation Toggle */}
+                        <div className="flex flex-col items-center justify-end h-full pb-1">
+                            <button 
+                                onClick={() => {
+                                    const newVal = !eqSettings.saturation;
+                                    handleManualAdjustment('saturation', newVal);
+                                    setTimeout(commitManualChanges, 100);
+                                }}
+                                className={`w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all mb-2 ${
+                                    eqSettings.saturation 
+                                    ? 'border-red-500 bg-red-500/20 text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' 
+                                    : 'border-gray-600 bg-wes-800 text-gray-500 hover:border-gray-400'
+                                }`}
+                            >
+                                <Zap size={20} fill={eqSettings.saturation ? "currentColor" : "none"} />
+                            </button>
+                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Drive</span>
+                        </div>
+
+                         {/* Noise Gate Toggle */}
+                         <div className="flex flex-col items-center justify-end h-full pb-1">
+                            <button 
+                                onClick={() => {
+                                    const newVal = !eqSettings.noiseGate;
+                                    handleManualAdjustment('noiseGate', newVal);
+                                    setTimeout(commitManualChanges, 100);
+                                }}
+                                className={`w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all mb-2 ${
+                                    eqSettings.noiseGate 
+                                    ? 'border-green-500 bg-green-500/20 text-green-500 shadow-[0_0_15px_rgba(34,197,94,0.4)]' 
+                                    : 'border-gray-600 bg-wes-800 text-gray-500 hover:border-gray-400'
+                                }`}
+                            >
+                                <MicOff size={20} />
+                            </button>
+                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Gate</span>
+                        </div>
+
+                    </div>
+                </div>
+
             </div>
 
         </div>

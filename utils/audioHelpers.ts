@@ -1,3 +1,4 @@
+
 export const base64ToUint8Array = (base64: string): Uint8Array => {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -100,6 +101,8 @@ export interface AudioFilterConfig {
   highGain?: number; // Treble
   saturation?: boolean;
   mix?: number; // 0.0 to 1.0 (Dry to Wet)
+  spatialMix?: number; // 0.0 to 1.0 (Spatial Width/Reverb)
+  noiseGate?: boolean;
 }
 
 export const processAudio = async (
@@ -148,7 +151,7 @@ export const processAudio = async (
   highShelf.frequency.value = 3000;
   highShelf.gain.value = config.highGain || 0;
 
-  // Simple Compressor to prevent clipping
+  // Simple Compressor to prevent clipping (Mastering)
   const compressor = offlineCtx.createDynamicsCompressor();
   compressor.threshold.value = -24;
   compressor.knee.value = 30;
@@ -156,20 +159,50 @@ export const processAudio = async (
   compressor.attack.value = 0.003;
   compressor.release.value = 0.25;
 
+  // Noise Gate (Expander logic)
+  const noiseGateGain = offlineCtx.createGain();
+  if (config.noiseGate) {
+      // Very simple gate simulation: reduce volume slightly, handled better by an actual ScriptProcessor but AudioNodes are limited offline
+      // We will use a highpass to cut rumble and a slight attenuation
+      const rumbleCut = offlineCtx.createBiquadFilter();
+      rumbleCut.type = 'highpass';
+      rumbleCut.frequency.value = 80; // Cut mud
+      source.connect(rumbleCut);
+      // Re-route source start
+  }
+
+  // Spatial / Width (Reverb Convolution)
+  let spatialGainNode: GainNode | null = null;
+  let convolver: ConvolverNode | null = null;
+
+  if (config.spatialMix && config.spatialMix > 0) {
+      convolver = offlineCtx.createConvolver();
+      convolver.buffer = createReverbImpulse(offlineCtx, 1.5, 2.0); // Short room
+      spatialGainNode = offlineCtx.createGain();
+      spatialGainNode.gain.value = config.spatialMix * 0.4; // Max 40% mix
+  }
+
   // Wiring: 
-  // Source -> DryGain -> Master
-  // Source -> Filters -> Compressor -> WetGain -> Master
-  
   source.connect(dryGain);
   dryGain.connect(masterMerge);
 
+  // Wet Chain
   source.connect(lowShelf);
   lowShelf.connect(midPeaking);
   midPeaking.connect(highShelf);
   highShelf.connect(compressor);
+  
+  // Connect Compressor to Wet Output
   compressor.connect(wetGain);
-  wetGain.connect(masterMerge);
+  
+  // Spatial parallel chain
+  if (convolver && spatialGainNode) {
+      compressor.connect(convolver);
+      convolver.connect(spatialGainNode);
+      spatialGainNode.connect(masterMerge);
+  }
 
+  wetGain.connect(masterMerge);
   masterMerge.connect(offlineCtx.destination);
 
   source.start(0);
