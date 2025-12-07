@@ -30,7 +30,7 @@ export const generateSongConcept = async (params: GenerationParams): Promise<Par
     STRICT JSON OUTPUT REQUIRED.
     Output a JSON object containing:
     - title (String. Max 6 words. Creative, evocative, and concise. Do NOT include parentheses, descriptions, alternative titles, or commentary. JUST the title.)
-    - lyrics (An array of strings, where each string is a line. If instrumental, describe the sections like '[Chorus - Exploding synths]')
+    - lyrics (An array of strings, where each string is a line. If instrumental, describe the sections like '[Chorus - Exploding synths]'. Max 50 lines total. Do NOT loop or repeat infinitely.)
     - bpm (Number, tempo between 60-160)
     - instruments (Array of strings)
     - duration (Estimated duration in seconds)
@@ -46,6 +46,7 @@ export const generateSongConcept = async (params: GenerationParams): Promise<Par
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
+        maxOutputTokens: 4096, // Prevent runaway loops
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -112,6 +113,7 @@ export const refineLyrics = async (currentLyrics: string[], instruction: string)
         model: "gemini-2.5-flash",
         contents: prompt,
         config: {
+          maxOutputTokens: 4096,
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -282,6 +284,7 @@ export const analyzeAudioTrack = async (audioBase64: string): Promise<AudioAnaly
         ]
       },
       config: {
+        maxOutputTokens: 1024,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
