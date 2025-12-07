@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Player } from './components/Player';
@@ -9,6 +10,7 @@ import { Logo } from './components/Logo';
 import { AppView, Song, UserProfile } from './types';
 import { Play, MoreHorizontal } from 'lucide-react';
 import { useLibrary } from './hooks/useLibrary';
+import { ToastProvider } from './context/ToastContext';
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -76,7 +78,11 @@ export default function App() {
 
   // If not logged in, show Landing Page
   if (!user) {
-    return <LandingPage onLogin={handleLogin} />;
+    return (
+      <ToastProvider>
+        <LandingPage onLogin={handleLogin} />
+      </ToastProvider>
+    );
   }
 
   const renderContent = () => {
@@ -173,17 +179,19 @@ export default function App() {
   };
 
   return (
-    <div className="flex min-h-screen bg-black font-sans text-gray-100">
-      <Sidebar currentView={currentView} onChangeView={setCurrentView} onLogout={handleLogout} />
-      
-      <main className="flex-1 ml-64 pb-24 relative z-10">
-        <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-wes-900 to-black z-0 pointer-events-none"></div>
-        <div className="relative z-10 h-full">
-           {renderContent()}
-        </div>
-      </main>
+    <ToastProvider>
+      <div className="flex min-h-screen bg-black font-sans text-gray-100">
+        <Sidebar currentView={currentView} onChangeView={setCurrentView} onLogout={handleLogout} />
+        
+        <main className="flex-1 ml-64 pb-24 relative z-10">
+          <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-wes-900 to-black z-0 pointer-events-none"></div>
+          <div className="relative z-10 h-full">
+            {renderContent()}
+          </div>
+        </main>
 
-      <Player currentTrack={currentTrack} />
-    </div>
+        <Player currentTrack={currentTrack} />
+      </div>
+    </ToastProvider>
   );
 }

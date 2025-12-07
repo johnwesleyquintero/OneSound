@@ -1,24 +1,35 @@
+
 import React, { useState } from 'react';
 import { Upload, Sliders, CheckCircle2 } from 'lucide-react';
 import { REMASTER_STYLES } from '../constants';
+import { useToast } from '../context/ToastContext';
 
 export const RemasterTrack: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [isDone, setIsDone] = useState(false);
+  const { addToast } = useToast();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
+      const selectedFile = e.target.files[0];
+      // Basic validation check
+      if (selectedFile.size > 50 * 1024 * 1024) {
+        addToast("File size too large. Max 50MB.", 'error');
+        return;
+      }
+      setFile(selectedFile);
       setIsDone(false);
       setProgress(0);
+      addToast(`File loaded: ${selectedFile.name}`, 'info');
     }
   };
 
   const handleRemaster = () => {
     if (!file) return;
     setProcessing(true);
+    addToast("Initializing AI Remaster engine...", 'loading');
     
     // Simulate process
     let p = 0;
@@ -29,6 +40,7 @@ export const RemasterTrack: React.FC = () => {
         clearInterval(interval);
         setProcessing(false);
         setIsDone(true);
+        addToast("Remaster complete! Your audio has been enhanced.", 'success');
       }
     }, 100);
   };

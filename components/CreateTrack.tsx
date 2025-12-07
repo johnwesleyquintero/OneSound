@@ -1,10 +1,12 @@
+
 import React, { useState } from 'react';
 import { GENRES, MOODS } from '../constants';
 import { GenerationParams, Song } from '../types';
 import { generateSongConcept, generateCoverArt, generateVocals } from '../services/geminiService';
 import { supabase } from '../services/supabaseClient';
 import { base64ToUint8Array, createWavBlob } from '../utils/audioHelpers';
-import { Wand2, Music, Loader2, AlertCircle, Zap } from 'lucide-react';
+import { Wand2, Music, Loader2, Zap } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 interface CreateTrackProps {
   onTrackCreated: (track: Song) => void;
@@ -13,7 +15,7 @@ interface CreateTrackProps {
 export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<string>('idle'); 
-  const [error, setError] = useState<string | null>(null);
+  const { addToast } = useToast();
 
   const [formData, setFormData] = useState<GenerationParams>({
     genre: GENRES[0],
@@ -38,7 +40,6 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError(null);
     setStep('composing');
 
     try {
@@ -119,17 +120,18 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
 
       if (dbError) throw dbError;
 
-      // Map back to Song type (handle DB field names if different, but here we matched mostly)
+      // Map back to Song type
       const newSong: Song = {
           ...newSongData,
           createdAt: new Date(data.created_at)
       } as Song;
 
+      addToast(`Track "${newSong.title}" created successfully.`, 'success');
       onTrackCreated(newSong);
 
     } catch (err) {
-      setError("Failed to generate and save track. Please try again.");
       console.error(err);
+      addToast("Failed to generate track. Please try again.", 'error');
     } finally {
       setLoading(false);
       setStep('idle');
@@ -256,13 +258,6 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                 </>
               )}
             </button>
-            
-            {error && (
-              <div className="bg-red-900/20 border border-red-800 text-red-200 p-4 rounded-lg flex items-center space-x-3">
-                <AlertCircle className="w-5 h-5" />
-                <span>{error}</span>
-              </div>
-            )}
           </form>
         </div>
 
