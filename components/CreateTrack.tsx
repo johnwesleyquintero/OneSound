@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { GENRES, MOODS } from '../constants';
 import { GenerationParams, Song } from '../types';
-import { generateSongConcept, generateCoverArt, generateVocals } from '../services/geminiService';
+import { generateSongConcept, generateCoverArt, generateVocals, refineLyrics } from '../services/geminiService';
 import { supabase } from '../services/supabaseClient';
-import { base64ToUint8Array, createWavBlob } from '../utils/audioHelpers';
-import { Wand2, Music, Loader2, Zap, Edit3, Save, PlayCircle, RefreshCcw, Coffee, CassetteTape, Sword, Mountain, Sparkles, Users } from 'lucide-react';
+import { base64ToUint8Array, createWavBlob, generateProceduralBackingTrack, mixAudioTracks } from '../utils/audioHelpers';
+import { Wand2, Music, Loader2, Zap, Edit3, Save, PlayCircle, RefreshCcw, Coffee, CassetteTape, Sword, Mountain, Sparkles, Users, Hammer } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
 interface CreateTrackProps {
@@ -53,11 +53,9 @@ const TEMPLATES = [
 export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
   const { addToast } = useToast();
   
-  // Phase 1: Input -> Concept
-  // Phase 2: Edit Concept
-  // Phase 3: Production (Art + Audio)
   const [phase, setPhase] = useState<'input' | 'drafting' | 'production'>('input');
   const [loading, setLoading] = useState(false);
+  const [refining, setRefining] = useState(false);
   const [draftTrack, setDraftTrack] = useState<Partial<Song> | null>(null);
 
   const [formData, setFormData] = useState<GenerationParams>({
@@ -113,6 +111,23 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
     }
   };
 
+  // NEW: Refine Lyrics Tool
+  const handleRefineLyrics = async (instruction: string) => {
+    if (!draftTrack?.lyrics) return;
+    setRefining(true);
+    addToast(`Polishing lyrics: "${instruction}"...`, "loading");
+    
+    try {
+        const polishedLyrics = await refineLyrics(draftTrack.lyrics, instruction);
+        setDraftTrack(prev => prev ? ({...prev, lyrics: polishedLyrics}) : null);
+        addToast("Lyrics updated.", "success");
+    } catch (e) {
+        addToast("Refinement failed.", "error");
+    } finally {
+        setRefining(false);
+    }
+  };
+
   // STEP 2: Production (Audio & Art)
   const handleProduction = async () => {
     if (!draftTrack) return;
@@ -121,19 +136,63 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
     addToast("Entering production phase...", "loading");
 
     try {
-      // Parallel Generation
+      // Parallel Generation of Art and Vocals
       const artPromise = generateCoverArt(draftTrack);
-      let audioPromise = Promise.resolve("");
+      let vocalPromise = Promise.resolve("");
 
       if (formData.hasVocals && draftTrack.lyrics) {
-         audioPromise = generateVocals(
+         vocalPromise = generateVocals(
             draftTrack.lyrics, 
             formData.voiceName || 'Kore',
             formData.isDuet ? formData.secondaryVoiceName : undefined
          );
       }
 
-      const [artBase64, audioBase64] = await Promise.all([artPromise, audioPromise]);
+      const [artBase64, vocalBase64] = await Promise.all([artPromise, vocalPromise]);
+
+      // --- PROCEDURAL MUSIC GENERATION ---
+      let finalAudioBlob: Blob | null = null;
+      
+      // If we have vocals, try to generate a backing track and mix
+      if (vocalBase64) {
+          addToast("Synthesizing backing track...", "loading");
+          try {
+              // 1. Generate Backing Track based on Gemini's BPM and Chords
+              const bpm = draftTrack.bpm || 120;
+              const chords = draftTrack.musicalElements?.chordProgression || ['C', 'G', 'Am', 'F'];
+              const duration = draftTrack.duration || 180;
+              
+              const backingBuffer = await generateProceduralBackingTrack(
+                  bpm, 
+                  chords, 
+                  formData.genre, 
+                  duration
+              );
+
+              // 2. Mix Vocals and Backing
+              finalAudioBlob = await mixAudioTracks(vocalBase64, backingBuffer);
+              addToast("Mixing complete.", "success");
+          } catch (mixErr) {
+              console.error("Mixing failed, falling back to raw vocals", mixErr);
+              // Fallback to just vocals
+              const pcmData = base64ToUint8Array(vocalBase64);
+              finalAudioBlob = createWavBlob(pcmData, 24000); 
+          }
+      } else if (!vocalBase64 && !formData.hasVocals) {
+           // Instrumental only mode (just synth)
+           const bpm = draftTrack.bpm || 120;
+           const chords = draftTrack.musicalElements?.chordProgression || ['C', 'G', 'Am', 'F'];
+           const duration = draftTrack.duration || 180;
+           
+           const backingBuffer = await generateProceduralBackingTrack(
+                bpm, 
+                chords, 
+                formData.genre, 
+                duration
+           );
+           finalAudioBlob = await mixAudioTracks("", backingBuffer); 
+      }
+
 
       const trackId = crypto.randomUUID();
       
@@ -141,11 +200,8 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
       let coverUrl = artBase64; 
       let audioUrl = ""; 
       
-      let audioBlob: Blob | null = null;
-      if (audioBase64) {
-          const pcmData = base64ToUint8Array(audioBase64);
-          audioBlob = createWavBlob(pcmData, 24000); // 24kHz standard for Gemini TTS
-          audioUrl = URL.createObjectURL(audioBlob);
+      if (finalAudioBlob) {
+          audioUrl = URL.createObjectURL(finalAudioBlob);
       }
 
       // Try uploading to Supabase (Graceful Fallback)
@@ -157,8 +213,8 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
               if (uploadedCover) coverUrl = uploadedCover;
           }
 
-          if (audioBlob) {
-              const uploadedAudio = await uploadAsset(audioBlob, 'audio', `${trackId}.wav`);
+          if (finalAudioBlob) {
+              const uploadedAudio = await uploadAsset(finalAudioBlob, 'audio', `${trackId}.wav`);
               if (uploadedAudio) audioUrl = uploadedAudio;
           }
       } catch (uploadError) {
@@ -184,7 +240,8 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
         type: 'original',
         description: draftTrack.description,
         isDuet: formData.isDuet,
-        secondaryVoiceName: formData.secondaryVoiceName
+        secondaryVoiceName: formData.secondaryVoiceName,
+        musicalElements: draftTrack.musicalElements
       };
 
       // Try inserting into DB
@@ -273,7 +330,7 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                 <div className="absolute inset-0 z-20 bg-wes-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-center">
                     <Loader2 className="w-16 h-16 text-wes-purple animate-spin mb-4" />
                     <h3 className="text-2xl font-bold text-white">Producing Track...</h3>
-                    <p className="text-gray-400 mt-2">Synthesizing Vocals • Generating Artwork • Mastering Audio</p>
+                    <p className="text-gray-400 mt-2">Synthesizing Backing Track • Mixing Audio • Generating Art</p>
                 </div>
             )}
 
@@ -441,22 +498,67 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                              <p className="text-xs text-gray-500 uppercase font-bold">BPM</p>
                              <p className="text-xl font-mono text-wes-purple">{draftTrack?.bpm || 120}</p>
                         </div>
+                        <div className="text-right pl-4 border-l border-wes-700">
+                             <p className="text-xs text-gray-500 uppercase font-bold">Key</p>
+                             <p className="text-xl font-mono text-white">{draftTrack?.musicalElements?.key || "C"}</p>
+                        </div>
                     </div>
 
-                    <div className="flex-1 flex flex-col">
+                    <div className="flex-1 flex flex-col relative">
                         <div className="flex justify-between items-center mb-2">
                              <div className="flex items-center space-x-2">
                                 <label className="text-xs text-gray-500 uppercase font-bold">Lyrics Editor</label>
                                 {formData.isDuet && <span className="text-[10px] bg-wes-purple/20 text-wes-purple px-2 py-0.5 rounded border border-wes-purple/50">Duet Mode</span>}
                              </div>
-                             <button 
-                                type="button" 
-                                onClick={() => setPhase('input')}
-                                className="text-xs text-red-400 hover:underline flex items-center"
-                             >
-                                <RefreshCcw className="w-3 h-3 mr-1" /> Discard
-                             </button>
+                             
+                             <div className="flex items-center space-x-3">
+                                 {/* Magic Polish Tools */}
+                                 <div className="flex space-x-1">
+                                    <button 
+                                        type="button"
+                                        onClick={() => handleRefineLyrics("Make rhyme scheme tighter")}
+                                        disabled={refining}
+                                        className="px-3 py-1 bg-wes-800 text-xs text-wes-purple hover:bg-wes-purple hover:text-white rounded border border-wes-700 transition"
+                                    >
+                                        Rhyme
+                                    </button>
+                                    <button 
+                                        type="button"
+                                        onClick={() => handleRefineLyrics("Make it more abstract and poetic")}
+                                        disabled={refining}
+                                        className="px-3 py-1 bg-wes-800 text-xs text-blue-400 hover:bg-blue-600 hover:text-white rounded border border-wes-700 transition"
+                                    >
+                                        Poetic
+                                    </button>
+                                     <button 
+                                        type="button"
+                                        onClick={() => handleRefineLyrics("Simplify the flow for better rhythm")}
+                                        disabled={refining}
+                                        className="px-3 py-1 bg-wes-800 text-xs text-green-400 hover:bg-green-600 hover:text-white rounded border border-wes-700 transition"
+                                    >
+                                        Simplify
+                                    </button>
+                                 </div>
+                                 <div className="h-4 w-px bg-wes-700 mx-2"></div>
+                                 <button 
+                                    type="button" 
+                                    onClick={() => setPhase('input')}
+                                    className="text-xs text-red-400 hover:underline flex items-center"
+                                 >
+                                    <RefreshCcw className="w-3 h-3 mr-1" /> Discard
+                                 </button>
+                             </div>
                         </div>
+
+                        {refining && (
+                            <div className="absolute inset-0 z-10 bg-wes-900/50 backdrop-blur-sm flex items-center justify-center rounded-xl">
+                                <div className="bg-black/80 px-4 py-2 rounded-full flex items-center space-x-2 border border-wes-purple">
+                                    <Wand2 className="w-4 h-4 text-wes-purple animate-pulse" />
+                                    <span className="text-sm font-bold text-white">Polishing lyrics with AI...</span>
+                                </div>
+                            </div>
+                        )}
+
                         <textarea 
                             className="flex-1 w-full bg-wes-800/50 border border-wes-700 text-gray-100 rounded-xl p-6 focus:ring-2 focus:ring-wes-purple focus:outline-none resize-none font-mono leading-relaxed"
                             value={draftTrack?.lyrics?.join('\n') || ""}
@@ -469,6 +571,16 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                              ? "Tip: Use 'Speaker 1:' and 'Speaker 2:' to assign lines." 
                              : "Edit lines to adjust phrasing. Empty lines create pauses."}
                         </p>
+                    </div>
+                    
+                    {/* Musical Data Preview */}
+                    <div className="p-4 bg-wes-800/50 rounded-xl border border-wes-700">
+                        <p className="text-xs text-gray-500 uppercase font-bold mb-2">Generated Chord Progression</p>
+                        <div className="flex space-x-2">
+                            {draftTrack?.musicalElements?.chordProgression?.map((chord, i) => (
+                                <span key={i} className="px-3 py-1 bg-wes-700 text-white rounded font-mono text-sm">{chord}</span>
+                            )) || <span className="text-gray-500 text-sm">No progression generated.</span>}
+                        </div>
                     </div>
 
                     <button 
@@ -498,7 +610,7 @@ export const CreateTrack: React.FC<CreateTrackProps> = ({ onTrackCreated }) => {
                      </li>
                      <li className="flex items-start">
                         <span className="text-wes-purple mr-2 font-bold">2.</span>
-                        Remove [Chorus] or [Verse] tags if you don't want them spoken.
+                        Use the <strong>Magic Polish</strong> buttons to refine rhymes.
                      </li>
                      <li className="flex items-start">
                         <span className="text-wes-purple mr-2 font-bold">3.</span>

@@ -18,7 +18,7 @@ export const generateSongConcept = async (params: GenerationParams): Promise<Par
     : "Output standard lyrics.";
 
   const prompt = `
-    Act as an expert music producer and songwriter.
+    Act as an expert music producer and composer.
     Create a detailed song concept for a track with the following parameters:
     Genre: ${params.genre}
     Mood: ${params.mood}
@@ -30,10 +30,14 @@ export const generateSongConcept = async (params: GenerationParams): Promise<Par
     Output a JSON object containing:
     - title (Creative song title)
     - lyrics (An array of strings, where each string is a line. If instrumental, describe the sections like '[Chorus - Exploding synths]')
-    - bpm (Number, tempo)
+    - bpm (Number, tempo between 60-160)
     - instruments (Array of strings)
     - duration (Estimated duration in seconds)
     - description (Short vibe description)
+    - musicalElements (Object):
+        - key (e.g., "C", "F#", "Am")
+        - scale (e.g., "Major", "Minor", "Dorian")
+        - chordProgression (Array of strings representing chords for a 4-bar loop, e.g., ["Am", "F", "C", "G"])
   `;
 
   try {
@@ -56,7 +60,18 @@ export const generateSongConcept = async (params: GenerationParams): Promise<Par
               items: { type: Type.STRING }
             },
             duration: { type: Type.INTEGER },
-            description: { type: Type.STRING }
+            description: { type: Type.STRING },
+            musicalElements: {
+                type: Type.OBJECT,
+                properties: {
+                    key: { type: Type.STRING },
+                    scale: { type: Type.STRING },
+                    chordProgression: { 
+                        type: Type.ARRAY,
+                        items: { type: Type.STRING }
+                    }
+                }
+            }
           }
         }
       }
@@ -74,6 +89,51 @@ export const generateSongConcept = async (params: GenerationParams): Promise<Par
     throw error;
   }
 };
+
+export const refineLyrics = async (currentLyrics: string[], instruction: string): Promise<string[]> => {
+    const ai = getClient();
+    
+    const prompt = `
+      Act as a world-class lyricist. 
+      Refine the following lyrics based on this instruction: "${instruction}".
+      
+      Rules:
+      1. Keep the same general structure/length.
+      2. Improve rhyme scheme and flow.
+      3. Return ONLY the JSON array of strings.
+      
+      Current Lyrics:
+      ${JSON.stringify(currentLyrics)}
+    `;
+  
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              lyrics: { 
+                type: Type.ARRAY, 
+                items: { type: Type.STRING } 
+              }
+            }
+          }
+        }
+      });
+  
+      let text = response.text;
+      if (!text) throw new Error("No text response");
+      text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      const data = JSON.parse(text);
+      return data.lyrics;
+    } catch (error) {
+      console.error("Lyric Refinement Error:", error);
+      return currentLyrics; // Fallback to original
+    }
+  };
 
 export const generateCoverArt = async (song: Partial<Song>): Promise<string> => {
   const ai = getClient();

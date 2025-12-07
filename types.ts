@@ -16,6 +16,11 @@ export interface Song {
   type: 'original' | 'remaster';
   isDuet?: boolean;
   secondaryVoiceName?: string;
+  musicalElements?: {
+    key: string;
+    scale: string;
+    chordProgression: string[];
+  };
 }
 
 export interface UserProfile {
