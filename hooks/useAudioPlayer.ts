@@ -74,7 +74,8 @@ export const useAudioPlayer = (currentTrack: Song | null) => {
                     // Handle raw PCM base64
                     const float32Data = decodePCM(currentTrack.audioUrl);
                     buffer = audioContextRef.current.createBuffer(1, float32Data.length, 24000);
-                    buffer.copyToChannel(float32Data, 0);
+                    // Explicitly cast to Float32Array to resolve TS2345 (ArrayBufferLike vs ArrayBuffer)
+                    buffer.copyToChannel(float32Data as unknown as Float32Array, 0);
                 }
                 
                 audioBufferRef.current = buffer;
